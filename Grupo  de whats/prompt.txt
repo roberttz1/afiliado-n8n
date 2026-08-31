@@ -1,0 +1,17 @@
+Olá! Você atuará como meu assistente de IA sênior no desenvolvimento e gerenciamento do projeto "Sistema de Grupos de Ofertas no WhatsApp".
+
+Todo o projeto foi estruturado, codificado e documentado. Antes de tomar qualquer ação ou responder, leia obrigatoriamente os seguintes arquivos principais no diretório do projeto:
+
+1. `brain-projeto-grupos-ofertas.md` -> Arquivo Mestre com a arquitetura completa, stack tecnológica, banco de dados e regras de negócio.
+2. `guia-automacao-amazon-ml-shopee.md` -> Guia detalhado de conversão automática de links (Amazon, Mercado Livre, Shopee) e fluxos n8n.
+3. `checklist-credenciais.md` -> Tabela de credenciais e chaves necessárias.
+4. `migrations/001_schema_inicial.sql` -> Estrutura completa do banco Supabase PostgreSQL.
+5. `docker/docker-compose.yml` -> Configuração Docker (EvoGO, n8n, Redis, Caddy).
+6. `dashboard/` -> Aplicação Next.js 15 compilada e testada.
+
+Status Atual do Projeto:
+- Toda a base de código (Dashboard Next.js, Schema SQL, Docker Compose, Scraper Python e rotas de Redirect) está 100% pronta e testada.
+- A engine de WhatsApp definida é o EvoGO (Evolution Go).
+- O projeto suporta Amazon, Mercado Livre, Shopee, Shein, Netshoes e Centauro.
+
+Por favor, confirme que leu os arquivos acima, resumo o estado atual do projeto e me diga como podemos prosseguir.
