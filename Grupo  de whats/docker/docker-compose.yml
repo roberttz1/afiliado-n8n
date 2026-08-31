@@ -1,0 +1,187 @@
+# ============================================================
+# Docker Compose — Sistema Grupos de Ofertas (EvoGO)
+# ============================================================
+# Serviços: EvoGO (Evolution Go), n8n, Redis, Caddy (proxy reverso)
+# Supabase é usado como serviço cloud (não precisa rodar local)
+# ============================================================
+
+services:
+  # --------------------------------------------------------
+  # Redis — Cache e filas
+  # --------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: ofertas-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # --------------------------------------------------------
+  # PostgreSQL — Para EvoGO (separado do Supabase)
+  # --------------------------------------------------------
+  postgres-evogo:
+    image: postgres:16-alpine
+    container_name: ofertas-postgres-evogo
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: evogo
+      POSTGRES_PASSWORD: ${EVOGO_PG_PASSWORD:-evogo_secret_change_me}
+      POSTGRES_DB: evogo
+    volumes:
+      - postgres_evogo_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U evogo"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # --------------------------------------------------------
+  # EvoGO (Evolution Go) — Gateway WhatsApp Ultra-Rápido em Go
+  # --------------------------------------------------------
+  evogo-api:
+    image: evoapicloud/evolution-go:latest
+    container_name: ofertas-evogo
+    restart: unless-stopped
+    depends_on:
+      postgres-evogo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      # Server
+      SERVER_URL: https://evogo.${DOMAIN}
+      SERVER_PORT: 8080
+
+      # Auth
+      AUTHENTICATION_API_KEY: ${EVOGO_API_KEY}
+      AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES: "true"
+
+      # Database
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://evogo:${EVOGO_PG_PASSWORD:-evogo_secret_change_me}@postgres-evogo:5432/evogo
+
+      # Redis
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: redis://redis:6379
+      CACHE_REDIS_PREFIX_KEY: evogo
+      CACHE_REDIS_SAVE_INSTANCES: "true"
+      CACHE_LOCAL_ENABLED: "false"
+
+      # Webhook
+      WEBHOOK_GLOBAL_ENABLED: "true"
+      WEBHOOK_GLOBAL_URL: ${WEBHOOK_GLOBAL_URL:-}
+      WEBHOOK_GLOBAL_WEBHOOK_BY_EVENTS: "true"
+      WEBHOOK_EVENTS_GROUPS_UPDATE: "true"
+      WEBHOOK_EVENTS_GROUP_PARTICIPANTS_UPDATE: "true"
+      WEBHOOK_EVENTS_MESSAGES_UPSERT: "true"
+
+      # WhatsApp
+      CONFIG_SESSION_PHONE_CLIENT: "Grupos Ofertas (EvoGO)"
+      CONFIG_SESSION_PHONE_NAME: Chrome
+
+      # Logs
+      LOG_LEVEL: WARN
+      LOG_COLOR: "true"
+    volumes:
+      - evogo_instances:/evogo/instances
+      - evogo_store:/evogo/store
+
+  # --------------------------------------------------------
+  # n8n — Orquestração de Workflows
+  # --------------------------------------------------------
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    container_name: ofertas-n8n
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "5678:5678"
+    environment:
+      # Geral
+      N8N_HOST: n8n.${DOMAIN}
+      N8N_PORT: 5678
+      N8N_PROTOCOL: https
+      WEBHOOK_URL: https://n8n.${DOMAIN}
+      GENERIC_TIMEZONE: America/Sao_Paulo
+      TZ: America/Sao_Paulo
+
+      # Execução
+      EXECUTIONS_MODE: regular
+      EXECUTIONS_DATA_SAVE_ON_ERROR: all
+      EXECUTIONS_DATA_SAVE_ON_SUCCESS: all
+      EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS: "true"
+      EXECUTIONS_DATA_MAX_AGE: 168
+
+      # Credenciais seguras
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:-change_this_encryption_key}
+      N8N_BASIC_AUTH_ACTIVE: "true"
+      N8N_BASIC_AUTH_USER: ${N8N_USER:-admin}
+      N8N_BASIC_AUTH_PASSWORD: ${N8N_PASSWORD:-change_me}
+
+      # Banco SQLite
+      DB_TYPE: sqlite
+    volumes:
+      - n8n_data:/home/node/.n8n
+
+  # --------------------------------------------------------
+  # Dashboard Next.js
+  # --------------------------------------------------------
+  dashboard:
+    build:
+      context: ../dashboard
+      dockerfile: Dockerfile
+    container_name: ofertas-dashboard
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_SUPABASE_URL: ${SUPABASE_URL}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY}
+      EVOGO_API_URL: http://evogo-api:8080
+      EVOGO_API_KEY: ${EVOGO_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      CLAUDE_MODEL: ${CLAUDE_MODEL:-claude-sonnet-4-20250514}
+    depends_on:
+      - evogo-api
+
+  # --------------------------------------------------------
+  # Caddy — Reverse Proxy + SSL automático
+  # --------------------------------------------------------
+  caddy:
+    image: caddy:2-alpine
+    container_name: ofertas-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - evogo-api
+      - n8n
+      - dashboard
+
+volumes:
+  redis_data:
+  postgres_evogo_data:
+  evogo_instances:
+  evogo_store:
+  n8n_data:
+  caddy_data:
+  caddy_config:

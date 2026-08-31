@@ -1,0 +1,228 @@
+{
+  "name": "03 - Agendador de Fila de Envios (Slots & Throttle)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 2
+            }
+          ]
+        }
+      },
+      "id": "node-schedule-2m",
+      "name": "Cron 2min (Fila de Agendamento)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [180, 300]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "ofertas",
+        "returnAll": false,
+        "limit": 5,
+        "filterType": "manual",
+        "filters": {
+          "conditions": [
+            {
+              "key": "status",
+              "operator": "eq",
+              "value": "aprovada"
+            }
+          ]
+        }
+      },
+      "id": "node-fetch-aprovadas",
+      "name": "Buscar Ofertas Aprovadas",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [400, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "V326BJ8v0aA0PeXh",
+          "name": "Supabase API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "grupos",
+        "returnAll": true,
+        "filterType": "manual",
+        "filters": {
+          "conditions": [
+            {
+              "key": "status",
+              "operator": "eq",
+              "value": "ativo"
+            }
+          ]
+        }
+      },
+      "id": "node-fetch-grupos-ativos",
+      "name": "Buscar Grupos Ativos",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [620, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "V326BJ8v0aA0PeXh",
+          "name": "Supabase API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const ofertas = $('Buscar Ofertas Aprovadas').all().map(i => i.json);\nconst grupos = $input.all().map(i => i.json);\n\nif (!ofertas.length || !grupos.length) {\n  return [];\n}\n\nconst enviosToInsert = [];\nlet slotBaseTime = new Date();\n\n// Para cada oferta aprovada\nfor (let i = 0; i < ofertas.length; i++) {\n  const oferta = ofertas[i];\n  \n  // Agendar para todos os grupos ativos do nicho\n  for (const grupo of grupos) {\n    if (grupo.nicho === (oferta.categoria || 'tenis') || grupo.nicho === 'tenis') {\n      \n      // Intervalo entre 5 e 10 min + jitter +-30s\n      const minInterval = 5 + Math.floor(Math.random() * 6);\n      const jitterSeconds = Math.floor(Math.random() * 60) - 30;\n      const slotTimestamp = new Date(slotBaseTime.getTime() + (minInterval * 60000) + (jitterSeconds * 1000) + (i * 300000));\n      \n      // Montar mensagem formatada\n      let msg = `*${oferta.titulo_gerado || '🔥 OFERTA IMPERDÍVEL'}*\\n\\n`;\n      msg += `${oferta.titulo_original}\\n\\n`;\n      if (oferta.preco_de && oferta.preco_de > oferta.preco_por) {\n        msg += `De ~R$ ${parseFloat(oferta.preco_de).toFixed(2).replace('.', ',')}~\\n`;\n      }\n      msg += `Por apenas: *R$ ${parseFloat(oferta.preco_por).toFixed(2).replace('.', ',')}* 🔥\\n`;\n      if (oferta.cupom && oferta.cupom.trim().length > 0) {\n        msg += `🎟️ Cupom: *${oferta.cupom.toUpperCase()}*\\n`;\n      }\n      msg += `\\n🛒 Compre aqui: ${oferta.link_afiliado}\\n\\n`;\n      msg += `⚡ _Oferta por tempo limitado! Sujeita a alteração de preço._`;\n      \n      enviosToInsert.push({\n        json: {\n          oferta_id: oferta.id,\n          grupo_id: grupo.id,\n          instancia_id: grupo.instancia_id || null,\n          mensagem_completa: msg,\n          agendado_para: slotTimestamp.toISOString(),\n          status: 'agendado'\n        }\n      });\n    }\n  }\n}\n\nreturn enviosToInsert;"
+      },
+      "id": "node-calcular-slots",
+      "name": "Calcular Slots e Formatar Mensagem",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [840, 300]
+    },
+    {
+      "parameters": {
+        "tableId": "envios",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "oferta_id",
+              "fieldValue": "={{ $json.oferta_id }}"
+            },
+            {
+              "fieldId": "grupo_id",
+              "fieldValue": "={{ $json.grupo_id }}"
+            },
+            {
+              "fieldId": "instancia_id",
+              "fieldValue": "={{ $json.instancia_id }}"
+            },
+            {
+              "fieldId": "mensagem_completa",
+              "fieldValue": "={{ $json.mensagem_completa }}"
+            },
+            {
+              "fieldId": "agendado_para",
+              "fieldValue": "={{ $json.agendado_para }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "agendado"
+            }
+          ]
+        }
+      },
+      "id": "node-insert-envios",
+      "name": "Inserir na Fila de Envios",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1060, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "V326BJ8v0aA0PeXh",
+          "name": "Supabase API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "ofertas",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "key": "id",
+              "operator": "eq",
+              "value": "={{ $json.oferta_id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "enviada"
+            }
+          ]
+        }
+      },
+      "id": "node-update-oferta-enviada",
+      "name": "Marcar Oferta como Agendada/Enviada",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1280, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "V326BJ8v0aA0PeXh",
+          "name": "Supabase API"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Cron 2min (Fila de Agendamento)": {
+      "main": [
+        [
+          {
+            "node": "Buscar Ofertas Aprovadas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Ofertas Aprovadas": {
+      "main": [
+        [
+          {
+            "node": "Buscar Grupos Ativos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Grupos Ativos": {
+      "main": [
+        [
+          {
+            "node": "Calcular Slots e Formatar Mensagem",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calcular Slots e Formatar Mensagem": {
+      "main": [
+        [
+          {
+            "node": "Inserir na Fila de Envios",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Inserir na Fila de Envios": {
+      "main": [
+        [
+          {
+            "node": "Marcar Oferta como Agendada/Enviada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

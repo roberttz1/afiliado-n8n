@@ -1,0 +1,84 @@
+{
+  "name": "Coletor e Validador de Ofertas (Template)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "id": "1",
+      "name": "Cron 15min",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://open-api.affiliate.shopee.com.br/graphql",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"query\": \"{ offerList(category: \\\"tenis\\\") { nodes { itemId price originalPrice offerLink imageUrl title } } }\"\n}"
+      },
+      "id": "2",
+      "name": "Shopee API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [470, 300]
+    },
+    {
+      "parameters": {
+        "modelName": "claude-sonnet-4-20250514",
+        "prompt": "Você é um copywriter brasileiro especialista em grupos de WhatsApp de ofertas de tênis. Crie um título curto e chamativo (máx 8 palavras).\n\nProduto: {{$json.title}}",
+        "options": {}
+      },
+      "id": "3",
+      "name": "Gerador de Título (Claude)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [690, 300]
+    }
+  ],
+  "connections": {
+    "Cron 15min": {
+      "main": [
+        [
+          {
+            "node": "Shopee API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shopee API": {
+      "main": [
+        [
+          {
+            "node": "Gerador de Título (Claude)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

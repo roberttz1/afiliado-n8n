@@ -1,0 +1,275 @@
+{
+  "name": "01 - Coletor e Conversor Universal de Ofertas",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "id": "node-schedule-15m",
+      "name": "Cron 15min (Coleta Periódica)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [180, 200]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ofertas-entrada",
+        "options": {}
+      },
+      "id": "node-webhook-entrada",
+      "name": "Webhook Entrada Oferta",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [180, 420],
+      "webhookId": "ofertas-entrada-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normalizador de entradas via Webhook (Amazon, ML, Shopee, Lomadee, Manual)\nconst item = $input.first().json;\nconst body = item.body || item;\nconst rawUrl = body.url || body.link || \"\";\nconst amazonTag = $env.AMAZON_ASSOCIATE_TAG || \"tenisofertas-20\";\n\nlet plataforma = body.plataforma || \"manual\";\nlet linkAfiliado = rawUrl;\nlet asin = null;\n\n// 1. Identificar e processar Amazon\nif (rawUrl.includes(\"amazon.com\") || rawUrl.includes(\"amzn.to\")) {\n  plataforma = \"amazon\";\n  const asinMatch = rawUrl.match(/(?:dp|gp\\/product)\\/([A-Z0-9]{10})/i);\n  if (asinMatch) {\n    asin = asinMatch[1];\n    linkAfiliado = `https://www.amazon.com.br/dp/${asin}?tag=${amazonTag}`;\n  }\n}\n// 2. Identificar Mercado Livre\nelse if (rawUrl.includes(\"mercadolivre.com\") || rawUrl.includes(\"meli.la\")) {\n  plataforma = \"mercado_livre\";\n  if (!rawUrl.includes(\"matt_tool\")) {\n    const sep = rawUrl.includes(\"?\") ? \"&\" : \"?\";\n    linkAfiliado = `${rawUrl}${sep}matt_tool=66512398&matt_word=tenisofertas`;\n  }\n}\n// 3. Identificar Shopee\nelse if (rawUrl.includes(\"shopee.com\")) {\n  plataforma = \"shopee\";\n  if (!rawUrl.includes(\"sub_id=\")) {\n    const sep = rawUrl.includes(\"?\") ? \"&\" : \"?\";\n    linkAfiliado = `${rawUrl}${sep}sub_id=whats_tenis`;\n  }\n}\n\nconst precoDe = parseFloat(body.preco_de || body.preco_original || 0);\nconst precoPor = parseFloat(body.preco_por || body.preco_atual || body.preco || 0);\nconst tituloOriginal = body.titulo_original || body.titulo || body.nome || \"Tênis Esportivo\";\n\n// Gerar Hash de Desduplicação\nconst cleanKey = `${plataforma}:${tituloOriginal.trim().toLowerCase().substring(0, 30)}:${precoPor}`;\nlet hashVal = 0;\nfor (let i = 0; i < cleanKey.length; i++) {\n  hashVal = ((hashVal << 5) - hashVal) + cleanKey.charCodeAt(i);\n  hashVal |= 0;\n}\nconst hashProduto = Math.abs(hashVal).toString(16);\n\nreturn [{\n  json: {\n    plataforma,\n    categoria: body.categoria || \"tenis\",\n    titulo_original: tituloOriginal,\n    preco_de: precoDe,\n    preco_por: precoPor,\n    cupom: body.cupom || null,\n    link_original: rawUrl,\n    link_afiliado: linkAfiliado,\n    imagem_url: body.imagem_url || \"https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=800\",\n    fonte: body.fonte || \"api_afiliado\",\n    hash_produto: hashProduto,\n    status: \"pendente\"\n  }\n}];"
+      },
+      "id": "node-processar-webhook",
+      "name": "Processar e Normalizar Entrada",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [420, 420]
+    },
+    {
+      "parameters": {
+        "url": "https://api.mercadolibre.com/sites/MLB/search?q=tenis+corrida+masculino&limit=5&sort=price_asc",
+        "options": {}
+      },
+      "id": "node-fetch-ofertas-exemplo",
+      "name": "Buscar Ofertas Exemplo (ML Feed)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [420, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.first().json.results || [];\nconst out = [];\n\nfor (const prod of items) {\n  const precoDe = prod.original_price || (prod.price * 1.35);\n  const precoPor = prod.price || 0;\n  const titulo = prod.title || \"\";\n  \n  if (precoPor >= 50 && precoPor <= 600 && precoDe > precoPor) {\n    const cleanKey = `mercado_livre:${titulo.trim().toLowerCase().substring(0, 30)}:${precoPor}`;\n    let hashVal = 0;\n    for (let i = 0; i < cleanKey.length; i++) {\n      hashVal = ((hashVal << 5) - hashVal) + cleanKey.charCodeAt(i);\n      hashVal |= 0;\n    }\n    const hashProduto = Math.abs(hashVal).toString(16);\n    \n    out.push({\n      json: {\n        plataforma: \"mercado_livre\",\n        categoria: \"tenis\",\n        titulo_original: titulo,\n        preco_de: parseFloat(precoDe.toFixed(2)),\n        preco_por: parseFloat(precoPor.toFixed(2)),\n        cupom: null,\n        link_original: prod.permalink || \"\",\n        link_afiliado: `${prod.permalink}?matt_tool=66512398&matt_word=tenisofertas`,\n        imagem_url: prod.thumbnail ? prod.thumbnail.replace(\"-I.jpg\", \"-O.jpg\") : null,\n        fonte: \"api_afiliado\",\n        hash_produto: hashProduto,\n        status: \"pendente\"\n      }\n    });\n  }\n}\n\nreturn out.length > 0 ? out : [];"
+      },
+      "id": "node-processar-feed",
+      "name": "Normalizar Feed Automático",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [640, 200]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "ofertas",
+        "returnAll": false,
+        "limit": 1,
+        "filterType": "manual",
+        "filters": {
+          "conditions": [
+            {
+              "key": "hash_produto",
+              "operator": "eq",
+              "value": "={{ $json.hash_produto }}"
+            }
+          ]
+        }
+      },
+      "id": "node-check-supabase-dup",
+      "name": "Checar Duplicata Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [880, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "V326BJ8v0aA0PeXh",
+          "name": "Supabase API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "strict",
+            "version": 2.2
+          },
+          "conditions": [
+            {
+              "id": "cond-is-new",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "node-if-nova-oferta",
+      "name": "IF Nova Oferta?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1080, 300]
+    },
+    {
+      "parameters": {
+        "tableId": "ofertas",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "plataforma",
+              "fieldValue": "={{ $('Processar e Normalizar Entrada').item?.json?.plataforma || $('Normalizar Feed Automático').item?.json?.plataforma }}"
+            },
+            {
+              "fieldId": "categoria",
+              "fieldValue": "={{ $('Processar e Normalizar Entrada').item?.json?.categoria || $('Normalizar Feed Automático').item?.json?.categoria || 'tenis' }}"
+            },
+            {
+              "fieldId": "titulo_original",
+              "fieldValue": "={{ $('Processar e Normalizar Entrada').item?.json?.titulo_original || $('Normalizar Feed Automático').item?.json?.titulo_original }}"
+            },
+            {
+              "fieldId": "preco_de",
+              "fieldValue": "={{ $('Processar e Normalizar Entrada').item?.json?.preco_de || $('Normalizar Feed Automático').item?.json?.preco_de }}"
+            },
+            {
+              "fieldId": "preco_por",
+              "fieldValue": "={{ $('Processar e Normalizar Entrada').item?.json?.preco_por || $('Normalizar Feed Automático').item?.json?.preco_por }}"
+            },
+            {
+              "fieldId": "cupom",
+              "fieldValue": "={{ $('Processar e Normalizar Entrada').item?.json?.cupom || $('Normalizar Feed Automático').item?.json?.cupom || '' }}"
+            },
+            {
+              "fieldId": "link_original",
+              "fieldValue": "={{ $('Processar e Normalizar Entrada').item?.json?.link_original || $('Normalizar Feed Automático').item?.json?.link_original }}"
+            },
+            {
+              "fieldId": "link_afiliado",
+              "fieldValue": "={{ $('Processar e Normalizar Entrada').item?.json?.link_afiliado || $('Normalizar Feed Automático').item?.json?.link_afiliado }}"
+            },
+            {
+              "fieldId": "imagem_url",
+              "fieldValue": "={{ $('Processar e Normalizar Entrada').item?.json?.imagem_url || $('Normalizar Feed Automático').item?.json?.imagem_url }}"
+            },
+            {
+              "fieldId": "fonte",
+              "fieldValue": "={{ $('Processar e Normalizar Entrada').item?.json?.fonte || $('Normalizar Feed Automático').item?.json?.fonte || 'api_afiliado' }}"
+            },
+            {
+              "fieldId": "hash_produto",
+              "fieldValue": "={{ $('Processar e Normalizar Entrada').item?.json?.hash_produto || $('Normalizar Feed Automático').item?.json?.hash_produto }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "pendente"
+            }
+          ]
+        }
+      },
+      "id": "node-insert-oferta-supabase",
+      "name": "Inserir Oferta no Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1300, 240],
+      "credentials": {
+        "supabaseApi": {
+          "id": "V326BJ8v0aA0PeXh",
+          "name": "Supabase API"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Cron 15min (Coleta Periódica)": {
+      "main": [
+        [
+          {
+            "node": "Buscar Ofertas Exemplo (ML Feed)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Ofertas Exemplo (ML Feed)": {
+      "main": [
+        [
+          {
+            "node": "Normalizar Feed Automático",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar Feed Automático": {
+      "main": [
+        [
+          {
+            "node": "Checar Duplicata Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Entrada Oferta": {
+      "main": [
+        [
+          {
+            "node": "Processar e Normalizar Entrada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processar e Normalizar Entrada": {
+      "main": [
+        [
+          {
+            "node": "Checar Duplicata Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Checar Duplicata Supabase": {
+      "main": [
+        [
+          {
+            "node": "IF Nova Oferta?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Nova Oferta?": {
+      "main": [
+        [
+          {
+            "node": "Inserir Oferta no Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

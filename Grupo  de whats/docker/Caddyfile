@@ -1,0 +1,19 @@
+# ============================================================
+# Caddyfile — Reverse Proxy com SSL automático (EvoGO)
+# Substitua {$DOMAIN} pelo seu domínio real
+# ============================================================
+
+# Dashboard principal
+{$DOMAIN} {
+	reverse_proxy dashboard:3000
+}
+
+# EvoGO (Evolution Go API)
+evogo.{$DOMAIN} {
+	reverse_proxy evogo-api:8080
+}
+
+# n8n
+n8n.{$DOMAIN} {
+	reverse_proxy n8n:5678
+}

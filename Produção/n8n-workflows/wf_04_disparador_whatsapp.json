@@ -1,0 +1,256 @@
+{
+  "name": "04 - Disparador de Mensagens WhatsApp (EvoGO)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      },
+      "id": "node-schedule-1m",
+      "name": "Cron 1min (Disparador)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [180, 300]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "envios",
+        "returnAll": false,
+        "limit": 3,
+        "filterType": "manual",
+        "filters": {
+          "conditions": [
+            {
+              "key": "status",
+              "operator": "eq",
+              "value": "agendado"
+            }
+          ]
+        }
+      },
+      "id": "node-fetch-envios-agendados",
+      "name": "Buscar Envios Agendados",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [400, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "V326BJ8v0aA0PeXh",
+          "name": "Supabase API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "ofertas",
+        "returnAll": false,
+        "limit": 1,
+        "filterType": "manual",
+        "filters": {
+          "conditions": [
+            {
+              "key": "id",
+              "operator": "eq",
+              "value": "={{ $json.oferta_id }}"
+            }
+          ]
+        }
+      },
+      "id": "node-fetch-oferta-info",
+      "name": "Buscar Dados da Oferta",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [620, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "V326BJ8v0aA0PeXh",
+          "name": "Supabase API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "grupos",
+        "returnAll": false,
+        "limit": 1,
+        "filterType": "manual",
+        "filters": {
+          "conditions": [
+            {
+              "key": "id",
+              "operator": "eq",
+              "value": "={{ $('Buscar Envios Agendados').item.json.grupo_id }}"
+            }
+          ]
+        }
+      },
+      "id": "node-fetch-grupo-info",
+      "name": "Buscar Dados do Grupo",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [840, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "V326BJ8v0aA0PeXh",
+          "name": "Supabase API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const envio = $('Buscar Envios Agendados').item.json;\nconst oferta = $('Buscar Dados da Oferta').item.json;\nconst grupo = $input.first().json;\n\nconst instanciaNome = 'Number_4847';\nconst whatsappGroupId = grupo.whatsapp_group_id || '120363024847999999@g.us';\nconst imagemUrl = oferta.imagem_url || 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=800';\nconst caption = envio.mensagem_completa || `🔥 ${oferta.titulo_original}\\n\\n🛒 Compre aqui: ${oferta.link_afiliado}`;\n\nreturn [{\n  json: {\n    envio_id: envio.id,\n    grupo_id: grupo.id,\n    instancia_nome: instanciaNome,\n    whatsapp_group_id: whatsappGroupId,\n    payload: {\n      number: whatsappGroupId,\n      options: {\n        delay: 1200,\n        presence: 'composing'\n      },\n      mediaMessage: {\n        mediatype: 'image',\n        media: imagemUrl,\n        caption: caption\n      }\n    }\n  }\n}];"
+      },
+      "id": "node-prepare-evogo-payload",
+      "name": "Preparar Payload de Disparo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1060, 300]
+    },
+    {
+      "parameters": {
+        "url": "=http://2.25.204.18:8080/message/sendMedia/{{ $json.instancia_nome }}",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "429683C4C977415CAAFCCE10F7D57E11"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.payload }}"
+      },
+      "id": "node-send-evogo-media",
+      "name": "Enviar WhatsApp (EvoGO)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1280, 300]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "envios",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "key": "id",
+              "operator": "eq",
+              "value": "={{ $('Preparar Payload de Disparo').item.json.envio_id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "enviado"
+            },
+            {
+              "fieldId": "enviado_em",
+              "fieldValue": "={{ new Date().toISOString() }}"
+            }
+          ]
+        }
+      },
+      "id": "node-update-envio-enviado",
+      "name": "Atualizar Status do Envio",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1500, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "V326BJ8v0aA0PeXh",
+          "name": "Supabase API"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Cron 1min (Disparador)": {
+      "main": [
+        [
+          {
+            "node": "Buscar Envios Agendados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Envios Agendados": {
+      "main": [
+        [
+          {
+            "node": "Buscar Dados da Oferta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Dados da Oferta": {
+      "main": [
+        [
+          {
+            "node": "Buscar Dados do Grupo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Dados do Grupo": {
+      "main": [
+        [
+          {
+            "node": "Preparar Payload de Disparo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Payload de Disparo": {
+      "main": [
+        [
+          {
+            "node": "Enviar WhatsApp (EvoGO)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar WhatsApp (EvoGO)": {
+      "main": [
+        [
+          {
+            "node": "Atualizar Status do Envio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

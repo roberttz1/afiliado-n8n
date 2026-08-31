@@ -1,0 +1,287 @@
+{
+  "name": "02 - Validador e Copywriter IA (Claude Sonnet)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 2
+            }
+          ]
+        }
+      },
+      "id": "node-schedule-2m",
+      "name": "Cron 2min (Fila de Validação)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [180, 300]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "ofertas",
+        "returnAll": false,
+        "limit": 5,
+        "filterType": "manual",
+        "filters": {
+          "conditions": [
+            {
+              "key": "status",
+              "operator": "eq",
+              "value": "pendente"
+            }
+          ]
+        }
+      },
+      "id": "node-fetch-pendentes",
+      "name": "Buscar Ofertas Pendentes",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [400, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "V326BJ8v0aA0PeXh",
+          "name": "Supabase API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const row = item.json;\n  const precoDe = parseFloat(row.preco_de || 0);\n  const precoPor = parseFloat(row.preco_por || 0);\n  const link = row.link_afiliado || \"\";\n  \n  let isValid = true;\n  let motivo = \"\";\n  \n  // 1. Validar link de afiliado\n  if (!link || link.trim().length < 10) {\n    isValid = false;\n    motivo = \"Link de afiliado ausente ou inválido\";\n  }\n  // 2. Validar faixa de preço (tênis plausível R$ 30 a R$ 600)\n  else if (precoPor < 30 || precoPor > 600) {\n    isValid = false;\n    motivo = `Preço R$ ${precoPor} fora da faixa plausível (R$ 30 - 600)`;\n  }\n  // 3. Validar desconto mínimo (25%)\n  else if (precoDe > 0 && ((1 - precoPor / precoDe) * 100) < 25) {\n    isValid = false;\n    motivo = `Desconto abaixo de 25% (De: ${precoDe}, Por: ${precoPor})`;\n  }\n  \n  results.push({\n    json: {\n      ...row,\n      is_valid: isValid,\n      motivo_descarte: motivo\n    }\n  });\n}\n\nreturn results;"
+      },
+      "id": "node-validar-regras",
+      "name": "Validar Regras de Negócio",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [620, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "strict",
+            "version": 2.2
+          },
+          "conditions": [
+            {
+              "id": "cond-valid",
+              "leftValue": "={{ $json.is_valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "node-if-valid",
+      "name": "IF Oferta Válida?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [840, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.anthropic.com/v1/messages",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-3-5-sonnet-20241022\",\n  \"max_tokens\": 80,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"Você é um copywriter brasileiro especialista em grupos de WhatsApp de ofertas e cupons de tênis.\\nCrie um título super chamativo de no máximo 8 palavras no estilo dos grupos reais (ex: 'ESSE TA DADO DEMAIS 🔥', 'MENOR PREÇO HISTÓRICO ⚡', 'DESCONTO INSANO NA NIKE 📦', 'ESSE GOSTA DE IR RÁPIDO DEMAIS 🏃').\\n\\nProduto: {{ $json.titulo_original }}\\nPreço De: R$ {{ $json.preco_de }}\\nPreço Por: R$ {{ $json.preco_por }}\\n\\nRetorne APENAS o título gerado em uma única linha, sem aspas, sem explicações.\"\n    }\n  ]\n}"
+      },
+      "id": "node-claude-api",
+      "name": "Gerar Copy com Claude Sonnet",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1080, 220]
+    },
+    {
+      "parameters": {
+        "jsCode": "const claudeRes = $input.first().json;\nconst prevOferta = $('Validar Regras de Negócio').item.json;\n\nlet tituloGerado = \"🔥 MEGA OFERTA DE TÊNIS!\";\ntry {\n  if (claudeRes.content && claudeRes.content[0] && claudeRes.content[0].text) {\n    tituloGerado = claudeRes.content[0].text.trim().replace(/^[\"']|[\"']$/g, '');\n  }\n} catch (e) {\n  tituloGerado = `🔥 TÊNIS COM ${Math.round(prevOferta.desconto_pct || 30)}% OFF!`;\n}\n\nreturn [{\n  json: {\n    id: prevOferta.id,\n    titulo_gerado: tituloGerado,\n    status: \"aprovada\"\n  }\n}];"
+      },
+      "id": "node-extract-claude-res",
+      "name": "Extrair Resposta Claude",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1300, 220]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "ofertas",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "key": "id",
+              "operator": "eq",
+              "value": "={{ $json.id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "titulo_gerado",
+              "fieldValue": "={{ $json.titulo_gerado }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "aprovada"
+            }
+          ]
+        }
+      },
+      "id": "node-update-aprovada",
+      "name": "Atualizar Oferta Aprovada",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1520, 220],
+      "credentials": {
+        "supabaseApi": {
+          "id": "V326BJ8v0aA0PeXh",
+          "name": "Supabase API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "ofertas",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "key": "id",
+              "operator": "eq",
+              "value": "={{ $json.id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "descartada"
+            },
+            {
+              "fieldId": "motivo_descarte",
+              "fieldValue": "={{ $json.motivo_descarte }}"
+            }
+          ]
+        }
+      },
+      "id": "node-update-descartada",
+      "name": "Marcar Oferta Descartada",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1080, 420],
+      "credentials": {
+        "supabaseApi": {
+          "id": "V326BJ8v0aA0PeXh",
+          "name": "Supabase API"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Cron 2min (Fila de Validação)": {
+      "main": [
+        [
+          {
+            "node": "Buscar Ofertas Pendentes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Ofertas Pendentes": {
+      "main": [
+        [
+          {
+            "node": "Validar Regras de Negócio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar Regras de Negócio": {
+      "main": [
+        [
+          {
+            "node": "IF Oferta Válida?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Oferta Válida?": {
+      "main": [
+        [
+          {
+            "node": "Gerar Copy com Claude Sonnet",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Marcar Oferta Descartada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gerar Copy com Claude Sonnet": {
+      "main": [
+        [
+          {
+            "node": "Extrair Resposta Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extrair Resposta Claude": {
+      "main": [
+        [
+          {
+            "node": "Atualizar Oferta Aprovada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

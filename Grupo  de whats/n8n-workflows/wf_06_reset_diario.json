@@ -1,0 +1,140 @@
+{
+  "name": "06 - Reset Diário e Manutenção",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 3 * * *"
+            }
+          ]
+        }
+      },
+      "id": "node-schedule-midnight",
+      "name": "Cron Meia-Noite BRT (03:00 UTC)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [180, 300]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "instancias",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "key": "status",
+              "operator": "neq",
+              "value": "banido"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "mensagens_hoje",
+              "fieldValue": "0"
+            }
+          ]
+        }
+      },
+      "id": "node-reset-instancias",
+      "name": "Reset Mensagens Instâncias",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [400, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "V326BJ8v0aA0PeXh",
+          "name": "Supabase API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "grupos",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "key": "status",
+              "operator": "neq",
+              "value": "arquivado"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "ofertas_hoje",
+              "fieldValue": "0"
+            }
+          ]
+        }
+      },
+      "id": "node-reset-grupos",
+      "name": "Reset Ofertas Hoje Grupos",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [620, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "V326BJ8v0aA0PeXh",
+          "name": "Supabase API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{\n  json: {\n    status: 'success',\n    mensagem: 'Reset diário de contadores concluído com sucesso!',\n    data_execucao: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "node-log-status",
+      "name": "Log Status Manutenção",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [840, 300]
+    }
+  ],
+  "connections": {
+    "Cron Meia-Noite BRT (03:00 UTC)": {
+      "main": [
+        [
+          {
+            "node": "Reset Mensagens Instâncias",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reset Mensagens Instâncias": {
+      "main": [
+        [
+          {
+            "node": "Reset Ofertas Hoje Grupos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reset Ofertas Hoje Grupos": {
+      "main": [
+        [
+          {
+            "node": "Log Status Manutenção",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

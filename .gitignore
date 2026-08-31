@@ -1,0 +1,42 @@
+# Arquivos a ignorar no Git (não versionar)
+.env
+.env.local
+.env.production
+*.env
+
+# Node.js
+node_modules/
+.next/
+npm-debug.log*
+yarn-error.log
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+.venv/
+
+# Temporários
+*.bak
+*.tmp
+/tmp/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Secrets (nunca commitar!)
+*.pem
+*.key
+*.p12
+secrets/

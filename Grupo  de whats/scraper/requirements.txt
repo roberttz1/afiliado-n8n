@@ -1,0 +1,7 @@
+# Scraper de Ofertas — Módulo Fallback
+# Este módulo SÓ deve ser usado quando APIs oficiais de afiliados
+# não cobrem uma plataforma ou recurso específico.
+
+httpx>=0.27.0
+selectolax>=0.3.21
+python-dotenv>=1.0.0

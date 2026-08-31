@@ -1,0 +1,332 @@
+{
+  "name": "05 - Monitor de Grupos e Rotação Automática",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "evogo-group-events",
+        "options": {}
+      },
+      "id": "node-webhook-evogo-events",
+      "name": "Webhook Evento EvoGO",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [180, 300],
+      "webhookId": "evogo-group-events-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body || $input.first().json;\nconst event = body.event || body.type || 'group-participants-update';\nconst data = body.data || body;\n\nconst groupJid = data.groupJid || data.id || (data.group && data.group.id) || '';\nconst action = data.action || (data.participants && data.participants[0]?.action) || 'add';\n\nlet delta = 0;\nlet eventoSaude = 'membro_entrou';\n\nif (action === 'add' || action === 'join') {\n  delta = 1;\n  eventoSaude = 'membro_entrou';\n} else if (action === 'remove' || action === 'leave') {\n  delta = -1;\n  eventoSaude = 'membro_saiu';\n}\n\nreturn [{\n  json: {\n    group_jid: groupJid,\n    delta: delta,\n    evento_saude: eventoSaude,\n    raw_event: event\n  }\n}];"
+      },
+      "id": "node-parse-event",
+      "name": "Processar Evento de Membro",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [400, 300]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "grupos",
+        "returnAll": false,
+        "limit": 1,
+        "filterType": "manual",
+        "filters": {
+          "conditions": [
+            {
+              "key": "whatsapp_group_id",
+              "operator": "eq",
+              "value": "={{ $json.group_jid }}"
+            }
+          ]
+        }
+      },
+      "id": "node-fetch-target-group",
+      "name": "Buscar Grupo no Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [620, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "V326BJ8v0aA0PeXh",
+          "name": "Supabase API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const grupo = $input.first().json;\nconst parseData = $('Processar Evento de Membro').item.json;\n\nconst qtdAtual = parseInt(grupo.qtd_membros || 0, 10);\nconst novaQtd = Math.max(0, qtdAtual + parseData.delta);\nconst capacidade = parseInt(grupo.capacidade_maxima || 950, 10);\nconst atingiuLimite = novaQtd >= capacidade;\n\nreturn [{\n  json: {\n    grupo_id: grupo.id,\n    nicho: grupo.nicho || 'tenis',\n    numero_sequencial: grupo.numero_sequencial || 1,\n    nova_qtd: novaQtd,\n    atingiu_limite: atingiuLimite,\n    evento_saude: parseData.evento_saude\n  }\n}];"
+      },
+      "id": "node-calc-capacity",
+      "name": "Calcular Nova Capacidade",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [840, 300]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "grupos",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "key": "id",
+              "operator": "eq",
+              "value": "={{ $json.grupo_id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "qtd_membros",
+              "fieldValue": "={{ $json.nova_qtd }}"
+            }
+          ]
+        }
+      },
+      "id": "node-update-group-count",
+      "name": "Atualizar Contagem de Membros",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1060, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "V326BJ8v0aA0PeXh",
+          "name": "Supabase API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "tableId": "log_saude",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "grupo_id",
+              "fieldValue": "={{ $('Calcular Nova Capacidade').item.json.grupo_id }}"
+            },
+            {
+              "fieldId": "evento",
+              "fieldValue": "={{ $('Calcular Nova Capacidade').item.json.evento_saude }}"
+            }
+          ]
+        }
+      },
+      "id": "node-insert-health-log",
+      "name": "Registrar Log de Saúde",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1280, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "V326BJ8v0aA0PeXh",
+          "name": "Supabase API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "strict",
+            "version": 2.2
+          },
+          "conditions": [
+            {
+              "id": "cond-full",
+              "leftValue": "={{ $('Calcular Nova Capacidade').item.json.atingiu_limite }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "node-if-group-full",
+      "name": "IF Grupo Cheio (>= 950)?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1500, 300]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "grupos",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "key": "id",
+              "operator": "eq",
+              "value": "={{ $('Calcular Nova Capacidade').item.json.grupo_id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "cheio"
+            }
+          ]
+        }
+      },
+      "id": "node-mark-group-full",
+      "name": "Marcar Grupo como Cheio",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1740, 220],
+      "credentials": {
+        "supabaseApi": {
+          "id": "V326BJ8v0aA0PeXh",
+          "name": "Supabase API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "tableId": "grupos",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "nicho",
+              "fieldValue": "={{ $('Calcular Nova Capacidade').item.json.nicho }}"
+            },
+            {
+              "fieldId": "numero_sequencial",
+              "fieldValue": "={{ $('Calcular Nova Capacidade').item.json.numero_sequencial + 1 }}"
+            },
+            {
+              "fieldId": "nome_grupo",
+              "fieldValue": "={{ '🔥 Tênis Ofertas VIP #' + ($('Calcular Nova Capacidade').item.json.numero_sequencial + 1) }}"
+            },
+            {
+              "fieldId": "link_convite",
+              "fieldValue": "https://chat.whatsapp.com/sample-group-invite"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "ativo"
+            },
+            {
+              "fieldId": "capacidade_maxima",
+              "fieldValue": "950"
+            }
+          ]
+        }
+      },
+      "id": "node-insert-new-group",
+      "name": "Cadastrar Novo Grupo Ativo (N+1)",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1960, 220],
+      "credentials": {
+        "supabaseApi": {
+          "id": "V326BJ8v0aA0PeXh",
+          "name": "Supabase API"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Evento EvoGO": {
+      "main": [
+        [
+          {
+            "node": "Processar Evento de Membro",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processar Evento de Membro": {
+      "main": [
+        [
+          {
+            "node": "Buscar Grupo no Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Grupo no Supabase": {
+      "main": [
+        [
+          {
+            "node": "Calcular Nova Capacidade",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calcular Nova Capacidade": {
+      "main": [
+        [
+          {
+            "node": "Atualizar Contagem de Membros",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Atualizar Contagem de Membros": {
+      "main": [
+        [
+          {
+            "node": "Registrar Log de Saúde",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar Log de Saúde": {
+      "main": [
+        [
+          {
+            "node": "IF Grupo Cheio (>= 950)?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Grupo Cheio (>= 950)?": {
+      "main": [
+        [
+          {
+            "node": "Marcar Grupo como Cheio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Marcar Grupo como Cheio": {
+      "main": [
+        [
+          {
+            "node": "Cadastrar Novo Grupo Ativo (N+1)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
