@@ -112,18 +112,20 @@ for wf_file in workflows_info:
     
     if row:
         wf_id = row[0]
+        version_id = str(uuid.uuid4())
         c.execute(\"\"\"
             UPDATE workflow_entity 
-            SET nodes = ?, connections = ?, settings = ?, updatedAt = datetime('now')
+            SET nodes = ?, connections = ?, settings = ?, versionId = ?, updatedAt = datetime('now'), nodeGroups = '[]'
             WHERE id = ?
-        \"\"\", (nodes, connections, settings, wf_id))
+        \"\"\", (nodes, connections, settings, version_id, wf_id))
         print(f"  [ATUALIZADO] {{wf_name}} (ID: {{wf_id}})")
     else:
         wf_id = str(uuid.uuid4())[:16]
+        version_id = str(uuid.uuid4())
         c.execute(\"\"\"
-            INSERT INTO workflow_entity (id, name, active, nodes, connections, settings, createdAt, updatedAt)
-            VALUES (?, ?, 0, ?, ?, ?, datetime('now'), datetime('now'))
-        \"\"\", (wf_id, wf_name, nodes, connections, settings))
+            INSERT INTO workflow_entity (id, name, active, nodes, connections, settings, versionId, nodeGroups, versionCounter, isArchived, createdAt, updatedAt)
+            VALUES (?, ?, 0, ?, ?, ?, ?, '[]', 1, 0, datetime('now'), datetime('now'))
+        \"\"\", (wf_id, wf_name, nodes, connections, settings, version_id))
         print(f"  [INSERIDO] {{wf_name}} (ID: {{wf_id}})")
 
 conn.commit()
