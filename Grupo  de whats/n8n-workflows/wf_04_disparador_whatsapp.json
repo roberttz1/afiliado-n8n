@@ -44,24 +44,24 @@
     },
     {
       "parameters": {
-        "jsCode": "const envios = $input.first().json;\nconst enviosList = Array.isArray(envios) ? envios : (envios && envios.id ? [envios] : []);\n\nconst out = [];\n\nfor (const envio of enviosList) {\n  const oferta = envio.ofertas || {};\n  const grupo = envio.grupos || {};\n  const instancia = (grupo.instancias && grupo.instancias.nome) || $env.EVOGO_INSTANCIA || 'Number_4847';\n  \n  const whatsappGroupId = grupo.whatsapp_group_id || '120363024847999999@g.us';\n  const imagemUrl = oferta.imagem_url || 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=800';\n  const caption = envio.mensagem_completa || `🔥 ${oferta.titulo_original}\\n\\n🛒 Compre aqui: ${oferta.link_afiliado}`;\n  \n  out.push({\n    json: {\n      envio_id: envio.id,\n      grupo_id: envio.grupo_id,\n      instancia_nome: instancia,\n      whatsapp_group_id: whatsappGroupId,\n      payload: {\n        number: whatsappGroupId,\n        options: {\n          delay: 1200,\n          presence: 'composing'\n        },\n        mediaMessage: {\n          mediatype: 'image',\n          media: imagemUrl,\n          caption: caption\n        }\n      }\n    }\n  });\n}\n\nreturn out;"
+        "jsCode": "const envios = $input.first().json;\nconst enviosList = Array.isArray(envios) ? envios : (envios && envios.id ? [envios] : []);\n\nconst out = [];\n\nfor (const envio of enviosList) {\n  const oferta = envio.ofertas || {};\n  const grupo = envio.grupos || {};\n  const whatsappGroupId = grupo.whatsapp_group_id || '120363024847999999@g.us';\n  const imagemUrl = oferta.imagem_url || 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=800';\n  const linkAfiliado = oferta.link_afiliado || 'https://www.amazon.com.br';\n  const caption = envio.mensagem_completa || `🔥 ${oferta.titulo_original}\\n\\n🛒 Compre aqui: ${linkAfiliado}`;\n  \n  out.push({\n    json: {\n      envio_id: envio.id,\n      grupo_id: envio.grupo_id,\n      payload: {\n        number: whatsappGroupId,\n        url: linkAfiliado,\n        text: caption,\n        title: \" \",\n        description: \"\",\n        imgUrl: imagemUrl,\n        delay: 1200\n      }\n    }\n  });\n}\n\nreturn out;"
       },
-      "id": "node-prepare-evogo-payload",
-      "name": "Preparar Payload de Disparo",
+      "id": "node-prepare-link-preview-payload",
+      "name": "Preparar Payload Link Preview",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [620, 300]
     },
     {
       "parameters": {
-        "url": "={{ ($env.EVOGO_API_URL || 'http://api:8080') + '/message/sendMedia/' + $json.instancia_nome }}",
+        "url": "={{ ($env.EVOGO_API_URL || 'http://api:8080') + '/send/link' }}",
         "method": "POST",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
             {
               "name": "apikey",
-              "value": "={{ $env.EVOGO_API_KEY || '429683C4C977415CAAFCCE10F7D57E11' }}"
+              "value": "d195a2f6-ca05-4f2e-a2f0-fa63d1de30d6"
             },
             {
               "name": "Content-Type",
@@ -80,15 +80,15 @@
           }
         }
       },
-      "id": "node-send-evogo-media",
-      "name": "Enviar WhatsApp (EvoGO)",
+      "id": "node-send-evogo-link-preview",
+      "name": "Disparar Link Preview (EvoGO)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [840, 300]
     },
     {
       "parameters": {
-        "url": "={{ $env.SUPABASE_URL || 'https://kwiaddydbjdofcyrqglq.supabase.co' }}/rest/v1/envios?id=eq.{{ $('Preparar Payload de Disparo').item.json.envio_id }}",
+        "url": "={{ $env.SUPABASE_URL || 'https://kwiaddydbjdofcyrqglq.supabase.co' }}/rest/v1/envios?id=eq.{{ $('Preparar Payload Link Preview').item.json.envio_id }}",
         "method": "PATCH",
         "sendHeaders": true,
         "headerParameters": {
@@ -134,25 +134,25 @@
       "main": [
         [
           {
-            "node": "Preparar Payload de Disparo",
+            "node": "Preparar Payload Link Preview",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Preparar Payload de Disparo": {
+    "Preparar Payload Link Preview": {
       "main": [
         [
           {
-            "node": "Enviar WhatsApp (EvoGO)",
+            "node": "Disparar Link Preview (EvoGO)",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Enviar WhatsApp (EvoGO)": {
+    "Disparar Link Preview (EvoGO)": {
       "main": [
         [
           {
