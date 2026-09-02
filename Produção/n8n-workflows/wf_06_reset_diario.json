@@ -20,73 +20,65 @@
     },
     {
       "parameters": {
-        "operation": "update",
-        "tableId": "instancias",
-        "matchType": "allFilters",
-        "filters": {
-          "conditions": [
+        "url": "={{ $env.SUPABASE_URL || 'https://kwiaddydbjdofcyrqglq.supabase.co' }}/rest/v1/instancias?status=neq.banido",
+        "method": "PATCH",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
             {
-              "key": "status",
-              "operator": "neq",
-              "value": "banido"
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_KEY || $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + ($env.SUPABASE_SERVICE_KEY || $env.SUPABASE_ANON_KEY) }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
             }
           ]
         },
-        "fieldsUi": {
-          "fieldValues": [
-            {
-              "fieldId": "mensagens_hoje",
-              "fieldValue": "0"
-            }
-          ]
-        }
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ mensagens_hoje: 0, ultimo_reset_contagem: new Date().toISOString().split('T')[0] }) }}"
       },
       "id": "node-reset-instancias",
       "name": "Reset Mensagens Instâncias",
-      "type": "n8n-nodes-base.supabase",
-      "typeVersion": 1,
-      "position": [400, 300],
-      "credentials": {
-        "supabaseApi": {
-          "id": "V326BJ8v0aA0PeXh",
-          "name": "Supabase API"
-        }
-      }
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [400, 300]
     },
     {
       "parameters": {
-        "operation": "update",
-        "tableId": "grupos",
-        "matchType": "allFilters",
-        "filters": {
-          "conditions": [
+        "url": "={{ $env.SUPABASE_URL || 'https://kwiaddydbjdofcyrqglq.supabase.co' }}/rest/v1/grupos?status=neq.arquivado",
+        "method": "PATCH",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
             {
-              "key": "status",
-              "operator": "neq",
-              "value": "arquivado"
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_KEY || $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + ($env.SUPABASE_SERVICE_KEY || $env.SUPABASE_ANON_KEY) }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
             }
           ]
         },
-        "fieldsUi": {
-          "fieldValues": [
-            {
-              "fieldId": "ofertas_hoje",
-              "fieldValue": "0"
-            }
-          ]
-        }
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ ofertas_hoje: 0, ultimo_reset_ofertas: new Date().toISOString().split('T')[0] }) }}"
       },
       "id": "node-reset-grupos",
       "name": "Reset Ofertas Hoje Grupos",
-      "type": "n8n-nodes-base.supabase",
-      "typeVersion": 1,
-      "position": [620, 300],
-      "credentials": {
-        "supabaseApi": {
-          "id": "V326BJ8v0aA0PeXh",
-          "name": "Supabase API"
-        }
-      }
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [620, 300]
     },
     {
       "parameters": {

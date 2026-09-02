@@ -16,7 +16,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const body = $input.first().json.body || $input.first().json;\nconst event = body.event || body.type || 'group-participants-update';\nconst data = body.data || body;\n\nconst groupJid = data.groupJid || data.id || (data.group && data.group.id) || '';\nconst action = data.action || (data.participants && data.participants[0]?.action) || 'add';\n\nlet delta = 0;\nlet eventoSaude = 'membro_entrou';\n\nif (action === 'add' || action === 'join') {\n  delta = 1;\n  eventoSaude = 'membro_entrou';\n} else if (action === 'remove' || action === 'leave') {\n  delta = -1;\n  eventoSaude = 'membro_saiu';\n}\n\nreturn [{\n  json: {\n    group_jid: groupJid,\n    delta: delta,\n    evento_saude: eventoSaude,\n    raw_event: event\n  }\n}];"
+        "jsCode": "const body = $input.first().json.body || $input.first().json;\nconst event = body.event || body.type || 'group-participants-update';\nconst data = body.data || body;\n\nconst groupJid = data.groupJid || data.id || (data.group && data.group.id) || '';\nconst action = data.action || (data.participants && data.participants[0]?.action) || 'add';\n\nlet delta = 0;\nlet eventoSaude = 'membro_entrou';\n\nif (action === 'add' || action === 'join') {\n  delta = 1;\n  eventoSaude = 'membro_entrou';\n} else if (action === 'remove' || action === 'leave') {\n  delta = -1;\n  eventoSaude = 'membro_saiu';\n}\n\nreturn [{\n  json: {\n    group_jid: groupJid,\n    delta: delta,\n    evento_saude: eventoSaude\n  }\n}];"
       },
       "id": "node-parse-event",
       "name": "Processar Evento de Membro",
@@ -26,36 +26,31 @@
     },
     {
       "parameters": {
-        "operation": "getAll",
-        "tableId": "grupos",
-        "returnAll": false,
-        "limit": 1,
-        "filterType": "manual",
-        "filters": {
-          "conditions": [
+        "url": "={{ $env.SUPABASE_URL || 'https://kwiaddydbjdofcyrqglq.supabase.co' }}/rest/v1/grupos?whatsapp_group_id=eq.{{ $json.group_jid }}&limit=1",
+        "method": "GET",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
             {
-              "key": "whatsapp_group_id",
-              "operator": "eq",
-              "value": "={{ $json.group_jid }}"
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_KEY || $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + ($env.SUPABASE_SERVICE_KEY || $env.SUPABASE_ANON_KEY) }}"
             }
           ]
         }
       },
       "id": "node-fetch-target-group",
       "name": "Buscar Grupo no Supabase",
-      "type": "n8n-nodes-base.supabase",
-      "typeVersion": 1,
-      "position": [620, 300],
-      "credentials": {
-        "supabaseApi": {
-          "id": "V326BJ8v0aA0PeXh",
-          "name": "Supabase API"
-        }
-      }
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [620, 300]
     },
     {
       "parameters": {
-        "jsCode": "const grupo = $input.first().json;\nconst parseData = $('Processar Evento de Membro').item.json;\n\nconst qtdAtual = parseInt(grupo.qtd_membros || 0, 10);\nconst novaQtd = Math.max(0, qtdAtual + parseData.delta);\nconst capacidade = parseInt(grupo.capacidade_maxima || 950, 10);\nconst atingiuLimite = novaQtd >= capacidade;\n\nreturn [{\n  json: {\n    grupo_id: grupo.id,\n    nicho: grupo.nicho || 'tenis',\n    numero_sequencial: grupo.numero_sequencial || 1,\n    nova_qtd: novaQtd,\n    atingiu_limite: atingiuLimite,\n    evento_saude: parseData.evento_saude\n  }\n}];"
+        "jsCode": "const grupos = $input.first().json;\nconst grupo = Array.isArray(grupos) ? grupos[0] : grupos;\nconst parseData = $('Processar Evento de Membro').item?.json || { delta: 0, evento_saude: 'membro_entrou' };\n\nif (!grupo || !grupo.id) {\n  return [];\n}\n\nconst qtdAtual = parseInt(grupo.qtd_membros || 0, 10);\nconst novaQtd = Math.max(0, qtdAtual + parseData.delta);\nconst capacidade = parseInt(grupo.capacidade_maxima || 950, 10);\nconst atingiuLimite = novaQtd >= capacidade;\n\nreturn [{\n  json: {\n    grupo_id: grupo.id,\n    nicho: grupo.nicho || 'tenis',\n    numero_sequencial: grupo.numero_sequencial || 1,\n    nova_qtd: novaQtd,\n    atingiu_limite: atingiuLimite,\n    evento_saude: parseData.evento_saude\n  }\n}];"
       },
       "id": "node-calc-capacity",
       "name": "Calcular Nova Capacidade",
@@ -65,66 +60,65 @@
     },
     {
       "parameters": {
-        "operation": "update",
-        "tableId": "grupos",
-        "matchType": "allFilters",
-        "filters": {
-          "conditions": [
+        "url": "={{ $env.SUPABASE_URL || 'https://kwiaddydbjdofcyrqglq.supabase.co' }}/rest/v1/grupos?id=eq.{{ $json.grupo_id }}",
+        "method": "PATCH",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
             {
-              "key": "id",
-              "operator": "eq",
-              "value": "={{ $json.grupo_id }}"
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_KEY || $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + ($env.SUPABASE_SERVICE_KEY || $env.SUPABASE_ANON_KEY) }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
             }
           ]
         },
-        "fieldsUi": {
-          "fieldValues": [
-            {
-              "fieldId": "qtd_membros",
-              "fieldValue": "={{ $json.nova_qtd }}"
-            }
-          ]
-        }
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ qtd_membros: $json.nova_qtd }) }}"
       },
       "id": "node-update-group-count",
       "name": "Atualizar Contagem de Membros",
-      "type": "n8n-nodes-base.supabase",
-      "typeVersion": 1,
-      "position": [1060, 300],
-      "credentials": {
-        "supabaseApi": {
-          "id": "V326BJ8v0aA0PeXh",
-          "name": "Supabase API"
-        }
-      }
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1060, 300]
     },
     {
       "parameters": {
-        "tableId": "log_saude",
-        "fieldsUi": {
-          "fieldValues": [
+        "url": "={{ $env.SUPABASE_URL || 'https://kwiaddydbjdofcyrqglq.supabase.co' }}/rest/v1/log_saude",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
             {
-              "fieldId": "grupo_id",
-              "fieldValue": "={{ $('Calcular Nova Capacidade').item.json.grupo_id }}"
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_KEY || $env.SUPABASE_ANON_KEY }}"
             },
             {
-              "fieldId": "evento",
-              "fieldValue": "={{ $('Calcular Nova Capacidade').item.json.evento_saude }}"
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + ($env.SUPABASE_SERVICE_KEY || $env.SUPABASE_ANON_KEY) }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
             }
           ]
-        }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ grupo_id: $('Calcular Nova Capacidade').item.json.grupo_id, evento: $('Calcular Nova Capacidade').item.json.evento_saude }) }}"
       },
       "id": "node-insert-health-log",
       "name": "Registrar Log de Saúde",
-      "type": "n8n-nodes-base.supabase",
-      "typeVersion": 1,
-      "position": [1280, 300],
-      "credentials": {
-        "supabaseApi": {
-          "id": "V326BJ8v0aA0PeXh",
-          "name": "Supabase API"
-        }
-      }
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1280, 300]
     },
     {
       "parameters": {
@@ -157,82 +151,65 @@
     },
     {
       "parameters": {
-        "operation": "update",
-        "tableId": "grupos",
-        "matchType": "allFilters",
-        "filters": {
-          "conditions": [
+        "url": "={{ $env.SUPABASE_URL || 'https://kwiaddydbjdofcyrqglq.supabase.co' }}/rest/v1/grupos?id=eq.{{ $('Calcular Nova Capacidade').item.json.grupo_id }}",
+        "method": "PATCH",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
             {
-              "key": "id",
-              "operator": "eq",
-              "value": "={{ $('Calcular Nova Capacidade').item.json.grupo_id }}"
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_KEY || $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + ($env.SUPABASE_SERVICE_KEY || $env.SUPABASE_ANON_KEY) }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
             }
           ]
         },
-        "fieldsUi": {
-          "fieldValues": [
-            {
-              "fieldId": "status",
-              "fieldValue": "cheio"
-            }
-          ]
-        }
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'cheio' }) }}"
       },
       "id": "node-mark-group-full",
       "name": "Marcar Grupo como Cheio",
-      "type": "n8n-nodes-base.supabase",
-      "typeVersion": 1,
-      "position": [1740, 220],
-      "credentials": {
-        "supabaseApi": {
-          "id": "V326BJ8v0aA0PeXh",
-          "name": "Supabase API"
-        }
-      }
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1740, 220]
     },
     {
       "parameters": {
-        "tableId": "grupos",
-        "fieldsUi": {
-          "fieldValues": [
+        "url": "={{ $env.SUPABASE_URL || 'https://kwiaddydbjdofcyrqglq.supabase.co' }}/rest/v1/grupos",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
             {
-              "fieldId": "nicho",
-              "fieldValue": "={{ $('Calcular Nova Capacidade').item.json.nicho }}"
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_KEY || $env.SUPABASE_ANON_KEY }}"
             },
             {
-              "fieldId": "numero_sequencial",
-              "fieldValue": "={{ $('Calcular Nova Capacidade').item.json.numero_sequencial + 1 }}"
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + ($env.SUPABASE_SERVICE_KEY || $env.SUPABASE_ANON_KEY) }}"
             },
             {
-              "fieldId": "nome_grupo",
-              "fieldValue": "={{ '🔥 Tênis Ofertas VIP #' + ($('Calcular Nova Capacidade').item.json.numero_sequencial + 1) }}"
-            },
-            {
-              "fieldId": "link_convite",
-              "fieldValue": "https://chat.whatsapp.com/sample-group-invite"
-            },
-            {
-              "fieldId": "status",
-              "fieldValue": "ativo"
-            },
-            {
-              "fieldId": "capacidade_maxima",
-              "fieldValue": "950"
+              "name": "Content-Type",
+              "value": "application/json"
             }
           ]
-        }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"nicho\": \"{{ $('Calcular Nova Capacidade').item.json.nicho }}\",\n  \"numero_sequencial\": {{ $('Calcular Nova Capacidade').item.json.numero_sequencial + 1 }},\n  \"nome_grupo\": \"🔥 Tênis Ofertas VIP #{{ $('Calcular Nova Capacidade').item.json.numero_sequencial + 1 }}\",\n  \"link_convite\": \"https://chat.whatsapp.com/sample-group-invite\",\n  \"status\": \"ativo\",\n  \"capacidade_maxima\": 950\n}"
       },
       "id": "node-insert-new-group",
       "name": "Cadastrar Novo Grupo Ativo (N+1)",
-      "type": "n8n-nodes-base.supabase",
-      "typeVersion": 1,
-      "position": [1960, 220],
-      "credentials": {
-        "supabaseApi": {
-          "id": "V326BJ8v0aA0PeXh",
-          "name": "Supabase API"
-        }
-      }
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1960, 220]
     }
   ],
   "connections": {

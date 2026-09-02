@@ -20,36 +20,32 @@
     },
     {
       "parameters": {
-        "operation": "getAll",
-        "tableId": "ofertas",
-        "returnAll": false,
-        "limit": 5,
-        "filterType": "manual",
-        "filters": {
-          "conditions": [
+        "url": "={{ $env.SUPABASE_URL || 'https://kwiaddydbjdofcyrqglq.supabase.co' }}/rest/v1/ofertas?status=eq.pendente&order=criado_em.asc&limit=5",
+        "method": "GET",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
             {
-              "key": "status",
-              "operator": "eq",
-              "value": "pendente"
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_KEY || $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + ($env.SUPABASE_SERVICE_KEY || $env.SUPABASE_ANON_KEY) }}"
             }
           ]
-        }
+        },
+        "options": {}
       },
-      "id": "node-fetch-pendentes",
+      "id": "node-fetch-pendentes-postgrest",
       "name": "Buscar Ofertas Pendentes",
-      "type": "n8n-nodes-base.supabase",
-      "typeVersion": 1,
-      "position": [400, 300],
-      "credentials": {
-        "supabaseApi": {
-          "id": "V326BJ8v0aA0PeXh",
-          "name": "Supabase API"
-        }
-      }
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [400, 300]
     },
     {
       "parameters": {
-        "jsCode": "const items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const row = item.json;\n  const precoDe = parseFloat(row.preco_de || 0);\n  const precoPor = parseFloat(row.preco_por || 0);\n  const link = row.link_afiliado || \"\";\n  \n  let isValid = true;\n  let motivo = \"\";\n  \n  // 1. Validar link de afiliado\n  if (!link || link.trim().length < 10) {\n    isValid = false;\n    motivo = \"Link de afiliado ausente ou inválido\";\n  }\n  // 2. Validar faixa de preço (tênis plausível R$ 30 a R$ 600)\n  else if (precoPor < 30 || precoPor > 600) {\n    isValid = false;\n    motivo = `Preço R$ ${precoPor} fora da faixa plausível (R$ 30 - 600)`;\n  }\n  // 3. Validar desconto mínimo (25%)\n  else if (precoDe > 0 && ((1 - precoPor / precoDe) * 100) < 25) {\n    isValid = false;\n    motivo = `Desconto abaixo de 25% (De: ${precoDe}, Por: ${precoPor})`;\n  }\n  \n  results.push({\n    json: {\n      ...row,\n      is_valid: isValid,\n      motivo_descarte: motivo\n    }\n  });\n}\n\nreturn results;"
+        "jsCode": "const items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const row = item.json;\n  if (!row || !row.id) continue;\n  \n  const precoDe = parseFloat(row.preco_de || 0);\n  const precoPor = parseFloat(row.preco_por || 0);\n  const link = row.link_afiliado || \"\";\n  \n  let isValid = true;\n  let motivo = \"\";\n  \n  if (!link || link.trim().length < 10) {\n    isValid = false;\n    motivo = \"Link de afiliado ausente ou inválido\";\n  } else if (precoPor < 30 || precoPor > 600) {\n    isValid = false;\n    motivo = `Preço R$ ${precoPor} fora da faixa plausível (R$ 30 - 600)`;\n  } else if (precoDe > 0 && ((1 - precoPor / precoDe) * 100) < 20) {\n    isValid = false;\n    motivo = `Desconto abaixo de 20% (De: ${precoDe}, Por: ${precoPor})`;\n  }\n  \n  results.push({\n    json: {\n      ...row,\n      is_valid: isValid,\n      motivo_descarte: motivo\n    }\n  });\n}\n\nreturn results;"
       },
       "id": "node-validar-regras",
       "name": "Validar Regras de Negócio",
@@ -109,7 +105,14 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"model\": \"claude-3-5-sonnet-20241022\",\n  \"max_tokens\": 80,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"Você é um copywriter brasileiro especialista em grupos de WhatsApp de ofertas e cupons de tênis.\\nCrie um título super chamativo de no máximo 8 palavras no estilo dos grupos reais (ex: 'ESSE TA DADO DEMAIS 🔥', 'MENOR PREÇO HISTÓRICO ⚡', 'DESCONTO INSANO NA NIKE 📦', 'ESSE GOSTA DE IR RÁPIDO DEMAIS 🏃').\\n\\nProduto: {{ $json.titulo_original }}\\nPreço De: R$ {{ $json.preco_de }}\\nPreço Por: R$ {{ $json.preco_por }}\\n\\nRetorne APENAS o título gerado em uma única linha, sem aspas, sem explicações.\"\n    }\n  ]\n}"
+        "jsonBody": "={\n  \"model\": \"claude-3-5-sonnet-20241022\",\n  \"max_tokens\": 80,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"Você é um copywriter brasileiro especialista em grupos VIP de WhatsApp de ofertas de tênis.\\nCrie um título ultra persuasivo de no máximo 8 palavras no estilo dos grupos mais lucrativos (ex: 'ESSE TA DADO DEMAIS 🔥', 'MENOR PREÇO HISTÓRICO ⚡', 'DESCONTO INSANO NA NIKE 🏃', 'QUASE DE GRAÇA HOJE 📦').\\n\\nProduto: {{ $json.titulo_original }}\\nPreço De: R$ {{ $json.preco_de }}\\nPreço Por: R$ {{ $json.preco_por }}\\n\\nRetorne APENAS o título gerado em uma linha, sem aspas, sem texto adicional.\"\n    }\n  ]\n}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
       },
       "id": "node-claude-api",
       "name": "Gerar Copy com Claude Sonnet",
@@ -119,91 +122,75 @@
     },
     {
       "parameters": {
-        "jsCode": "const claudeRes = $input.first().json;\nconst prevOferta = $('Validar Regras de Negócio').item.json;\n\nlet tituloGerado = \"🔥 MEGA OFERTA DE TÊNIS!\";\ntry {\n  if (claudeRes.content && claudeRes.content[0] && claudeRes.content[0].text) {\n    tituloGerado = claudeRes.content[0].text.trim().replace(/^[\"']|[\"']$/g, '');\n  }\n} catch (e) {\n  tituloGerado = `🔥 TÊNIS COM ${Math.round(prevOferta.desconto_pct || 30)}% OFF!`;\n}\n\nreturn [{\n  json: {\n    id: prevOferta.id,\n    titulo_gerado: tituloGerado,\n    status: \"aprovada\"\n  }\n}];"
+        "jsCode": "const claudeRes = $input.first().json;\nconst itemOrig = $('Validar Regras de Negócio').item?.json || {};\n\nlet tituloGerado = null;\ntry {\n  if (claudeRes.content && claudeRes.content[0] && claudeRes.content[0].text) {\n    tituloGerado = claudeRes.content[0].text.trim().replace(/^[\\\"']|[\\\"']$/g, '');\n  }\n} catch (e) {}\n\nif (!tituloGerado || tituloGerado.length < 5) {\n  const desc = itemOrig.desconto_pct ? `${Math.round(itemOrig.desconto_pct)}% OFF` : 'SUPER DESCONTO';\n  tituloGerado = `🔥 TÊNIS COM ${desc} — OFERTA RELÂMPAGO!`;\n}\n\nreturn [{\n  json: {\n    id: itemOrig.id,\n    titulo_gerado: tituloGerado,\n    status: \"aprovada\"\n  }\n}];"
       },
       "id": "node-extract-claude-res",
-      "name": "Extrair Resposta Claude",
+      "name": "Extrair Copy e Fallback",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [1300, 220]
     },
     {
       "parameters": {
-        "operation": "update",
-        "tableId": "ofertas",
-        "matchType": "allFilters",
-        "filters": {
-          "conditions": [
+        "url": "={{ $env.SUPABASE_URL || 'https://kwiaddydbjdofcyrqglq.supabase.co' }}/rest/v1/ofertas?id=eq.{{ $json.id }}",
+        "method": "PATCH",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
             {
-              "key": "id",
-              "operator": "eq",
-              "value": "={{ $json.id }}"
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_KEY || $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + ($env.SUPABASE_SERVICE_KEY || $env.SUPABASE_ANON_KEY) }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
             }
           ]
         },
-        "fieldsUi": {
-          "fieldValues": [
-            {
-              "fieldId": "titulo_gerado",
-              "fieldValue": "={{ $json.titulo_gerado }}"
-            },
-            {
-              "fieldId": "status",
-              "fieldValue": "aprovada"
-            }
-          ]
-        }
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'aprovada', titulo_gerado: $json.titulo_gerado }) }}"
       },
-      "id": "node-update-aprovada",
+      "id": "node-patch-aprovada",
       "name": "Atualizar Oferta Aprovada",
-      "type": "n8n-nodes-base.supabase",
-      "typeVersion": 1,
-      "position": [1520, 220],
-      "credentials": {
-        "supabaseApi": {
-          "id": "V326BJ8v0aA0PeXh",
-          "name": "Supabase API"
-        }
-      }
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1520, 220]
     },
     {
       "parameters": {
-        "operation": "update",
-        "tableId": "ofertas",
-        "matchType": "allFilters",
-        "filters": {
-          "conditions": [
+        "url": "={{ $env.SUPABASE_URL || 'https://kwiaddydbjdofcyrqglq.supabase.co' }}/rest/v1/ofertas?id=eq.{{ $json.id }}",
+        "method": "PATCH",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
             {
-              "key": "id",
-              "operator": "eq",
-              "value": "={{ $json.id }}"
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_KEY || $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + ($env.SUPABASE_SERVICE_KEY || $env.SUPABASE_ANON_KEY) }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
             }
           ]
         },
-        "fieldsUi": {
-          "fieldValues": [
-            {
-              "fieldId": "status",
-              "fieldValue": "descartada"
-            },
-            {
-              "fieldId": "motivo_descarte",
-              "fieldValue": "={{ $json.motivo_descarte }}"
-            }
-          ]
-        }
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'descartada', motivo_descarte: $json.motivo_descarte }) }}"
       },
-      "id": "node-update-descartada",
-      "name": "Marcar Oferta Descartada",
-      "type": "n8n-nodes-base.supabase",
-      "typeVersion": 1,
-      "position": [1080, 420],
-      "credentials": {
-        "supabaseApi": {
-          "id": "V326BJ8v0aA0PeXh",
-          "name": "Supabase API"
-        }
-      }
+      "id": "node-patch-descartada",
+      "name": "Descartar Oferta Inválida",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1080, 420]
     }
   ],
   "connections": {
@@ -251,7 +238,7 @@
         ],
         [
           {
-            "node": "Marcar Oferta Descartada",
+            "node": "Descartar Oferta Inválida",
             "type": "main",
             "index": 0
           }
@@ -262,14 +249,14 @@
       "main": [
         [
           {
-            "node": "Extrair Resposta Claude",
+            "node": "Extrair Copy e Fallback",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Extrair Resposta Claude": {
+    "Extrair Copy e Fallback": {
       "main": [
         [
           {

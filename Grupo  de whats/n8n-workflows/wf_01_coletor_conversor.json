@@ -33,160 +33,118 @@
     },
     {
       "parameters": {
-        "jsCode": "// Normalizador de entradas via Webhook (Amazon, ML, Shopee, Lomadee, Manual)\nconst item = $input.first().json;\nconst body = item.body || item;\nconst rawUrl = body.url || body.link || \"\";\nconst amazonTag = $env.AMAZON_ASSOCIATE_TAG || \"tenisofertas-20\";\n\nlet plataforma = body.plataforma || \"manual\";\nlet linkAfiliado = rawUrl;\nlet asin = null;\n\n// 1. Identificar e processar Amazon\nif (rawUrl.includes(\"amazon.com\") || rawUrl.includes(\"amzn.to\")) {\n  plataforma = \"amazon\";\n  const asinMatch = rawUrl.match(/(?:dp|gp\\/product)\\/([A-Z0-9]{10})/i);\n  if (asinMatch) {\n    asin = asinMatch[1];\n    linkAfiliado = `https://www.amazon.com.br/dp/${asin}?tag=${amazonTag}`;\n  }\n}\n// 2. Identificar Mercado Livre\nelse if (rawUrl.includes(\"mercadolivre.com\") || rawUrl.includes(\"meli.la\")) {\n  plataforma = \"mercado_livre\";\n  if (!rawUrl.includes(\"matt_tool\")) {\n    const sep = rawUrl.includes(\"?\") ? \"&\" : \"?\";\n    linkAfiliado = `${rawUrl}${sep}matt_tool=66512398&matt_word=tenisofertas`;\n  }\n}\n// 3. Identificar Shopee\nelse if (rawUrl.includes(\"shopee.com\")) {\n  plataforma = \"shopee\";\n  if (!rawUrl.includes(\"sub_id=\")) {\n    const sep = rawUrl.includes(\"?\") ? \"&\" : \"?\";\n    linkAfiliado = `${rawUrl}${sep}sub_id=whats_tenis`;\n  }\n}\n\nconst precoDe = parseFloat(body.preco_de || body.preco_original || 0);\nconst precoPor = parseFloat(body.preco_por || body.preco_atual || body.preco || 0);\nconst tituloOriginal = body.titulo_original || body.titulo || body.nome || \"Tênis Esportivo\";\n\n// Gerar Hash de Desduplicação\nconst cleanKey = `${plataforma}:${tituloOriginal.trim().toLowerCase().substring(0, 30)}:${precoPor}`;\nlet hashVal = 0;\nfor (let i = 0; i < cleanKey.length; i++) {\n  hashVal = ((hashVal << 5) - hashVal) + cleanKey.charCodeAt(i);\n  hashVal |= 0;\n}\nconst hashProduto = Math.abs(hashVal).toString(16);\n\nreturn [{\n  json: {\n    plataforma,\n    categoria: body.categoria || \"tenis\",\n    titulo_original: tituloOriginal,\n    preco_de: precoDe,\n    preco_por: precoPor,\n    cupom: body.cupom || null,\n    link_original: rawUrl,\n    link_afiliado: linkAfiliado,\n    imagem_url: body.imagem_url || \"https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=800\",\n    fonte: body.fonte || \"api_afiliado\",\n    hash_produto: hashProduto,\n    status: \"pendente\"\n  }\n}];"
-      },
-      "id": "node-processar-webhook",
-      "name": "Processar e Normalizar Entrada",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [420, 420]
-    },
-    {
-      "parameters": {
-        "url": "https://api.mercadolibre.com/sites/MLB/search?q=tenis+corrida+masculino&limit=5&sort=price_asc",
+        "url": "https://api.mercadolibre.com/sites/MLB/search?q=tenis+corrida+masculino&limit=6&sort=price_asc",
         "options": {}
       },
-      "id": "node-fetch-ofertas-exemplo",
-      "name": "Buscar Ofertas Exemplo (ML Feed)",
+      "id": "node-fetch-feed-ml",
+      "name": "Buscar Feed ML Tênis",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [420, 200]
     },
     {
       "parameters": {
-        "jsCode": "const items = $input.first().json.results || [];\nconst out = [];\n\nfor (const prod of items) {\n  const precoDe = prod.original_price || (prod.price * 1.35);\n  const precoPor = prod.price || 0;\n  const titulo = prod.title || \"\";\n  \n  if (precoPor >= 50 && precoPor <= 600 && precoDe > precoPor) {\n    const cleanKey = `mercado_livre:${titulo.trim().toLowerCase().substring(0, 30)}:${precoPor}`;\n    let hashVal = 0;\n    for (let i = 0; i < cleanKey.length; i++) {\n      hashVal = ((hashVal << 5) - hashVal) + cleanKey.charCodeAt(i);\n      hashVal |= 0;\n    }\n    const hashProduto = Math.abs(hashVal).toString(16);\n    \n    out.push({\n      json: {\n        plataforma: \"mercado_livre\",\n        categoria: \"tenis\",\n        titulo_original: titulo,\n        preco_de: parseFloat(precoDe.toFixed(2)),\n        preco_por: parseFloat(precoPor.toFixed(2)),\n        cupom: null,\n        link_original: prod.permalink || \"\",\n        link_afiliado: `${prod.permalink}?matt_tool=66512398&matt_word=tenisofertas`,\n        imagem_url: prod.thumbnail ? prod.thumbnail.replace(\"-I.jpg\", \"-O.jpg\") : null,\n        fonte: \"api_afiliado\",\n        hash_produto: hashProduto,\n        status: \"pendente\"\n      }\n    });\n  }\n}\n\nreturn out.length > 0 ? out : [];"
+        "jsCode": "const items = $input.first().json.results || [];\nconst out = [];\n\nfor (const prod of items) {\n  const precoPor = parseFloat(prod.price || 0);\n  const precoDe = parseFloat(prod.original_price || (precoPor * 1.35));\n  const titulo = prod.title || \"\";\n  \n  if (precoPor >= 30 && precoPor <= 600 && precoDe > precoPor) {\n    const cleanTitle = titulo.trim().toLowerCase().substring(0, 30);\n    const cleanKey = `mercado_livre:${cleanTitle}:${precoPor.toFixed(2)}`;\n    let hashVal = 0;\n    for (let i = 0; i < cleanKey.length; i++) {\n      hashVal = ((hashVal << 5) - hashVal) + cleanKey.charCodeAt(i);\n      hashVal |= 0;\n    }\n    const hashProduto = Math.abs(hashVal).toString(16);\n    const permalink = prod.permalink || \"\";\n    const sep = permalink.includes(\"?\") ? \"&\" : \"?\";\n    const linkAfiliado = `${permalink}${sep}matt_tool=66512398&matt_word=tenisofertas`;\n    \n    out.push({\n      json: {\n        plataforma: \"mercado_livre\",\n        categoria: \"tenis\",\n        titulo_original: titulo,\n        preco_de: parseFloat(precoDe.toFixed(2)),\n        preco_por: parseFloat(precoPor.toFixed(2)),\n        cupom: null,\n        link_original: permalink,\n        link_afiliado: linkAfiliado,\n        imagem_url: prod.thumbnail ? prod.thumbnail.replace(\"-I.jpg\", \"-O.jpg\") : \"https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=800\",\n        fonte: \"api_afiliado\",\n        hash_produto: hashProduto,\n        status: \"pendente\"\n      }\n    });\n  }\n}\n\nreturn out.length > 0 ? out : [];"
       },
-      "id": "node-processar-feed",
-      "name": "Normalizar Feed Automático",
+      "id": "node-parse-feed-ml",
+      "name": "Normalizar Feed ML",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [640, 200]
     },
     {
       "parameters": {
-        "operation": "getAll",
-        "tableId": "ofertas",
-        "returnAll": false,
-        "limit": 1,
-        "filterType": "manual",
-        "filters": {
-          "conditions": [
-            {
-              "key": "hash_produto",
-              "operator": "eq",
-              "value": "={{ $json.hash_produto }}"
-            }
-          ]
-        }
+        "jsCode": "const item = $input.first().json;\nconst body = item.body || item;\nconst rawUrl = body.url || body.link || \"\";\nconst amazonTag = $env.AMAZON_ASSOCIATE_TAG || \"tenisofertas-20\";\n\nlet plataforma = body.plataforma || \"manual\";\nlet linkAfiliado = rawUrl;\n\n// 1. Amazon\nif (rawUrl.includes(\"amazon.com\") || rawUrl.includes(\"amzn.to\")) {\n  plataforma = \"amazon\";\n  const asinMatch = rawUrl.match(/(?:dp|gp\\/product)\\/([A-Z0-9]{10})/i);\n  if (asinMatch) {\n    linkAfiliado = `https://www.amazon.com.br/dp/${asinMatch[1]}?tag=${amazonTag}`;\n  } else {\n    const sep = rawUrl.includes(\"?\") ? \"&\" : \"?\";\n    linkAfiliado = `${rawUrl}${sep}tag=${amazonTag}`;\n  }\n}\n// 2. Mercado Livre\nelse if (rawUrl.includes(\"mercadolivre.com\") || rawUrl.includes(\"meli.la\")) {\n  plataforma = \"mercado_livre\";\n  if (!rawUrl.includes(\"matt_tool\")) {\n    const sep = rawUrl.includes(\"?\") ? \"&\" : \"?\";\n    linkAfiliado = `${rawUrl}${sep}matt_tool=66512398&matt_word=tenisofertas`;\n  }\n}\n// 3. Shopee\nelse if (rawUrl.includes(\"shopee.com\")) {\n  plataforma = \"shopee\";\n  if (!rawUrl.includes(\"sub_id=\")) {\n    const sep = rawUrl.includes(\"?\") ? \"&\" : \"?\";\n    linkAfiliado = `${rawUrl}${sep}sub_id=whats_tenis`;\n  }\n}\n\nconst precoDe = parseFloat(body.preco_de || body.preco_original || 0);\nconst precoPor = parseFloat(body.preco_por || body.preco_atual || body.preco || 0);\nconst tituloOriginal = body.titulo_original || body.titulo || body.nome || \"Tênis Esportivo\";\n\nconst cleanTitle = tituloOriginal.trim().toLowerCase().substring(0, 30);\nconst cleanKey = `${plataforma}:${cleanTitle}:${precoPor.toFixed(2)}`;\nlet hashVal = 0;\nfor (let i = 0; i < cleanKey.length; i++) {\n  hashVal = ((hashVal << 5) - hashVal) + cleanKey.charCodeAt(i);\n  hashVal |= 0;\n}\nconst hashProduto = Math.abs(hashVal).toString(16);\n\nreturn [{\n  json: {\n    plataforma,\n    categoria: body.categoria || \"tenis\",\n    titulo_original: tituloOriginal,\n    preco_de: precoDe,\n    preco_por: precoPor,\n    cupom: body.cupom || null,\n    link_original: rawUrl,\n    link_afiliado: linkAfiliado,\n    imagem_url: body.imagem_url || \"https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=800\",\n    fonte: body.fonte || \"manual\",\n    hash_produto: hashProduto,\n    status: \"pendente\"\n  }\n}];"
       },
-      "id": "node-check-supabase-dup",
-      "name": "Checar Duplicata Supabase",
-      "type": "n8n-nodes-base.supabase",
-      "typeVersion": 1,
-      "position": [880, 300],
-      "credentials": {
-        "supabaseApi": {
-          "id": "V326BJ8v0aA0PeXh",
-          "name": "Supabase API"
-        }
-      }
+      "id": "node-parse-webhook",
+      "name": "Normalizar Webhook",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [420, 420]
     },
     {
       "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "typeValidation": "strict",
-            "version": 2.2
-          },
-          "conditions": [
+        "url": "={{ $env.SUPABASE_URL || 'https://kwiaddydbjdofcyrqglq.supabase.co' }}/rest/v1/ofertas?hash_produto=eq.{{ $json.hash_produto }}&select=id&limit=1",
+        "method": "GET",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
             {
-              "id": "cond-is-new",
-              "leftValue": "={{ $json.id }}",
-              "rightValue": "",
-              "operator": {
-                "type": "string",
-                "operation": "empty"
-              }
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_KEY || $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + ($env.SUPABASE_SERVICE_KEY || $env.SUPABASE_ANON_KEY) }}"
             }
-          ],
-          "combinator": "and"
+          ]
         },
-        "options": {}
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": false,
+              "neverError": true
+            }
+          }
+        }
       },
-      "id": "node-if-nova-oferta",
-      "name": "IF Nova Oferta?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.2,
+      "id": "node-check-dup-postgrest",
+      "name": "Checar Duplicata Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const prevOffer = $('Normalizar Feed ML').item?.json || $('Normalizar Webhook').item?.json;\nconst existing = $input.first().json;\n\n// Se retorno foi array vazio [], significa que NÃO é duplicata (oferta nova)\nconst isNew = Array.isArray(existing) ? existing.length === 0 : (!existing || !existing.id);\n\nif (isNew && prevOffer) {\n  return [{ json: prevOffer }];\n}\n\nreturn [];"
+      },
+      "id": "node-filter-new",
+      "name": "Filtrar Apenas Novas",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [1080, 300]
     },
     {
       "parameters": {
-        "tableId": "ofertas",
-        "fieldsUi": {
-          "fieldValues": [
+        "url": "={{ $env.SUPABASE_URL || 'https://kwiaddydbjdofcyrqglq.supabase.co' }}/rest/v1/ofertas",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
             {
-              "fieldId": "plataforma",
-              "fieldValue": "={{ $('Processar e Normalizar Entrada').item?.json?.plataforma || $('Normalizar Feed Automático').item?.json?.plataforma }}"
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_KEY || $env.SUPABASE_ANON_KEY }}"
             },
             {
-              "fieldId": "categoria",
-              "fieldValue": "={{ $('Processar e Normalizar Entrada').item?.json?.categoria || $('Normalizar Feed Automático').item?.json?.categoria || 'tenis' }}"
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + ($env.SUPABASE_SERVICE_KEY || $env.SUPABASE_ANON_KEY) }}"
             },
             {
-              "fieldId": "titulo_original",
-              "fieldValue": "={{ $('Processar e Normalizar Entrada').item?.json?.titulo_original || $('Normalizar Feed Automático').item?.json?.titulo_original }}"
+              "name": "Content-Type",
+              "value": "application/json"
             },
             {
-              "fieldId": "preco_de",
-              "fieldValue": "={{ $('Processar e Normalizar Entrada').item?.json?.preco_de || $('Normalizar Feed Automático').item?.json?.preco_de }}"
-            },
-            {
-              "fieldId": "preco_por",
-              "fieldValue": "={{ $('Processar e Normalizar Entrada').item?.json?.preco_por || $('Normalizar Feed Automático').item?.json?.preco_por }}"
-            },
-            {
-              "fieldId": "cupom",
-              "fieldValue": "={{ $('Processar e Normalizar Entrada').item?.json?.cupom || $('Normalizar Feed Automático').item?.json?.cupom || '' }}"
-            },
-            {
-              "fieldId": "link_original",
-              "fieldValue": "={{ $('Processar e Normalizar Entrada').item?.json?.link_original || $('Normalizar Feed Automático').item?.json?.link_original }}"
-            },
-            {
-              "fieldId": "link_afiliado",
-              "fieldValue": "={{ $('Processar e Normalizar Entrada').item?.json?.link_afiliado || $('Normalizar Feed Automático').item?.json?.link_afiliado }}"
-            },
-            {
-              "fieldId": "imagem_url",
-              "fieldValue": "={{ $('Processar e Normalizar Entrada').item?.json?.imagem_url || $('Normalizar Feed Automático').item?.json?.imagem_url }}"
-            },
-            {
-              "fieldId": "fonte",
-              "fieldValue": "={{ $('Processar e Normalizar Entrada').item?.json?.fonte || $('Normalizar Feed Automático').item?.json?.fonte || 'api_afiliado' }}"
-            },
-            {
-              "fieldId": "hash_produto",
-              "fieldValue": "={{ $('Processar e Normalizar Entrada').item?.json?.hash_produto || $('Normalizar Feed Automático').item?.json?.hash_produto }}"
-            },
-            {
-              "fieldId": "status",
-              "fieldValue": "pendente"
+              "name": "Prefer",
+              "value": "return=representation"
             }
           ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
         }
       },
-      "id": "node-insert-oferta-supabase",
-      "name": "Inserir Oferta no Supabase",
-      "type": "n8n-nodes-base.supabase",
-      "typeVersion": 1,
-      "position": [1300, 240],
-      "credentials": {
-        "supabaseApi": {
-          "id": "V326BJ8v0aA0PeXh",
-          "name": "Supabase API"
-        }
-      }
+      "id": "node-insert-oferta-postgrest",
+      "name": "Salvar Oferta no Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1300, 300]
     }
   ],
   "connections": {
@@ -194,25 +152,25 @@
       "main": [
         [
           {
-            "node": "Buscar Ofertas Exemplo (ML Feed)",
+            "node": "Buscar Feed ML Tênis",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Buscar Ofertas Exemplo (ML Feed)": {
+    "Buscar Feed ML Tênis": {
       "main": [
         [
           {
-            "node": "Normalizar Feed Automático",
+            "node": "Normalizar Feed ML",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Normalizar Feed Automático": {
+    "Normalizar Feed ML": {
       "main": [
         [
           {
@@ -227,14 +185,14 @@
       "main": [
         [
           {
-            "node": "Processar e Normalizar Entrada",
+            "node": "Normalizar Webhook",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Processar e Normalizar Entrada": {
+    "Normalizar Webhook": {
       "main": [
         [
           {
@@ -249,23 +207,22 @@
       "main": [
         [
           {
-            "node": "IF Nova Oferta?",
+            "node": "Filtrar Apenas Novas",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "IF Nova Oferta?": {
+    "Filtrar Apenas Novas": {
       "main": [
         [
           {
-            "node": "Inserir Oferta no Supabase",
+            "node": "Salvar Oferta no Supabase",
             "type": "main",
             "index": 0
           }
-        ],
-        []
+        ]
       ]
     }
   },

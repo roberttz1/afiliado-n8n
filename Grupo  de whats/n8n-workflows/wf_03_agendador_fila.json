@@ -20,149 +20,127 @@
     },
     {
       "parameters": {
-        "operation": "getAll",
-        "tableId": "ofertas",
-        "returnAll": false,
-        "limit": 5,
-        "filterType": "manual",
-        "filters": {
-          "conditions": [
+        "url": "={{ $env.SUPABASE_URL || 'https://kwiaddydbjdofcyrqglq.supabase.co' }}/rest/v1/ofertas?status=eq.aprovada&order=criado_em.asc&limit=5",
+        "method": "GET",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
             {
-              "key": "status",
-              "operator": "eq",
-              "value": "aprovada"
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_KEY || $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + ($env.SUPABASE_SERVICE_KEY || $env.SUPABASE_ANON_KEY) }}"
             }
           ]
         }
       },
       "id": "node-fetch-aprovadas",
       "name": "Buscar Ofertas Aprovadas",
-      "type": "n8n-nodes-base.supabase",
-      "typeVersion": 1,
-      "position": [400, 300],
-      "credentials": {
-        "supabaseApi": {
-          "id": "V326BJ8v0aA0PeXh",
-          "name": "Supabase API"
-        }
-      }
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [400, 300]
     },
     {
       "parameters": {
-        "operation": "getAll",
-        "tableId": "grupos",
-        "returnAll": true,
-        "filterType": "manual",
-        "filters": {
-          "conditions": [
+        "url": "={{ $env.SUPABASE_URL || 'https://kwiaddydbjdofcyrqglq.supabase.co' }}/rest/v1/grupos?status=eq.ativo",
+        "method": "GET",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
             {
-              "key": "status",
-              "operator": "eq",
-              "value": "ativo"
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_KEY || $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + ($env.SUPABASE_SERVICE_KEY || $env.SUPABASE_ANON_KEY) }}"
             }
           ]
         }
       },
       "id": "node-fetch-grupos-ativos",
       "name": "Buscar Grupos Ativos",
-      "type": "n8n-nodes-base.supabase",
-      "typeVersion": 1,
-      "position": [620, 300],
-      "credentials": {
-        "supabaseApi": {
-          "id": "V326BJ8v0aA0PeXh",
-          "name": "Supabase API"
-        }
-      }
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [620, 300]
     },
     {
       "parameters": {
-        "jsCode": "const ofertas = $('Buscar Ofertas Aprovadas').all().map(i => i.json);\nconst grupos = $input.all().map(i => i.json);\n\nif (!ofertas.length || !grupos.length) {\n  return [];\n}\n\nconst enviosToInsert = [];\nlet slotBaseTime = new Date();\n\n// Para cada oferta aprovada\nfor (let i = 0; i < ofertas.length; i++) {\n  const oferta = ofertas[i];\n  \n  // Agendar para todos os grupos ativos do nicho\n  for (const grupo of grupos) {\n    if (grupo.nicho === (oferta.categoria || 'tenis') || grupo.nicho === 'tenis') {\n      \n      // Intervalo entre 5 e 10 min + jitter +-30s\n      const minInterval = 5 + Math.floor(Math.random() * 6);\n      const jitterSeconds = Math.floor(Math.random() * 60) - 30;\n      const slotTimestamp = new Date(slotBaseTime.getTime() + (minInterval * 60000) + (jitterSeconds * 1000) + (i * 300000));\n      \n      // Montar mensagem formatada\n      let msg = `*${oferta.titulo_gerado || '🔥 OFERTA IMPERDÍVEL'}*\\n\\n`;\n      msg += `${oferta.titulo_original}\\n\\n`;\n      if (oferta.preco_de && oferta.preco_de > oferta.preco_por) {\n        msg += `De ~R$ ${parseFloat(oferta.preco_de).toFixed(2).replace('.', ',')}~\\n`;\n      }\n      msg += `Por apenas: *R$ ${parseFloat(oferta.preco_por).toFixed(2).replace('.', ',')}* 🔥\\n`;\n      if (oferta.cupom && oferta.cupom.trim().length > 0) {\n        msg += `🎟️ Cupom: *${oferta.cupom.toUpperCase()}*\\n`;\n      }\n      msg += `\\n🛒 Compre aqui: ${oferta.link_afiliado}\\n\\n`;\n      msg += `⚡ _Oferta por tempo limitado! Sujeita a alteração de preço._`;\n      \n      enviosToInsert.push({\n        json: {\n          oferta_id: oferta.id,\n          grupo_id: grupo.id,\n          instancia_id: grupo.instancia_id || null,\n          mensagem_completa: msg,\n          agendado_para: slotTimestamp.toISOString(),\n          status: 'agendado'\n        }\n      });\n    }\n  }\n}\n\nreturn enviosToInsert;"
+        "jsCode": "const ofertas = $('Buscar Ofertas Aprovadas').first().json || [];\nconst grupos = $input.first().json || [];\n\nconst ofertasList = Array.isArray(ofertas) ? ofertas : (ofertas.id ? [ofertas] : []);\nconst gruposList = Array.isArray(grupos) ? grupos : (grupos.id ? [grupos] : []);\n\nif (!ofertasList.length || !gruposList.length) {\n  return [];\n}\n\nconst enviosToInsert = [];\nlet slotBaseTime = new Date();\n\n// Ajustar se fora do horário comercial (08h às 22h BRT)\nconst hourBRT = (slotBaseTime.getUTCHours() - 3 + 24) % 24;\nif (hourBRT < 8) {\n  slotBaseTime.setUTCHours(11, 5, 0, 0); // 08:05 BRT\n} else if (hourBRT >= 22) {\n  slotBaseTime.setDate(slotBaseTime.getDate() + 1);\n  slotBaseTime.setUTCHours(11, 5, 0, 0); // 08:05 BRT amanhã\n}\n\nfor (let i = 0; i < ofertasList.length; i++) {\n  const oferta = ofertasList[i];\n  \n  for (const grupo of gruposList) {\n    if (grupo.nicho === (oferta.categoria || 'tenis') || grupo.nicho === 'tenis') {\n      \n      const minInterval = 5 + Math.floor(Math.random() * 5); // 5 a 9 min\n      const jitterSeconds = Math.floor(Math.random() * 60) - 30; // -30s a +30s\n      const slotTimestamp = new Date(slotBaseTime.getTime() + ((i * minInterval) * 60000) + (jitterSeconds * 1000));\n      \n      let msg = `*${oferta.titulo_gerado || '🔥 OFERTA IMPERDÍVEL!'}*\\n\\n`;\n      msg += `${oferta.titulo_original}\\n\\n`;\n      if (oferta.preco_de && oferta.preco_de > oferta.preco_por) {\n        msg += `De ~R$ ${parseFloat(oferta.preco_de).toFixed(2).replace('.', ',')}~\\n`;\n      }\n      msg += `Por apenas: *R$ ${parseFloat(oferta.preco_por).toFixed(2).replace('.', ',')}* 🔥\\n`;\n      if (oferta.cupom && oferta.cupom.trim().length > 0) {\n        msg += `🎟️ Cupom: *${oferta.cupom.toUpperCase()}*\\n`;\n      }\n      msg += `\\n🛒 Compre aqui: ${oferta.link_afiliado}\\n\\n`;\n      msg += `⚡ _Oferta por tempo limitado!_`;\n      \n      enviosToInsert.push({\n        json: {\n          oferta_id: oferta.id,\n          grupo_id: grupo.id,\n          instancia_id: grupo.instancia_id || null,\n          mensagem_completa: msg,\n          agendado_para: slotTimestamp.toISOString(),\n          status: 'agendado'\n        }\n      });\n    }\n  }\n}\n\nreturn enviosToInsert;"
       },
       "id": "node-calcular-slots",
-      "name": "Calcular Slots e Formatar Mensagem",
+      "name": "Calcular Slots e Mensagem",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [840, 300]
     },
     {
       "parameters": {
-        "tableId": "envios",
-        "fieldsUi": {
-          "fieldValues": [
+        "url": "={{ $env.SUPABASE_URL || 'https://kwiaddydbjdofcyrqglq.supabase.co' }}/rest/v1/envios",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
             {
-              "fieldId": "oferta_id",
-              "fieldValue": "={{ $json.oferta_id }}"
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_KEY || $env.SUPABASE_ANON_KEY }}"
             },
             {
-              "fieldId": "grupo_id",
-              "fieldValue": "={{ $json.grupo_id }}"
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + ($env.SUPABASE_SERVICE_KEY || $env.SUPABASE_ANON_KEY) }}"
             },
             {
-              "fieldId": "instancia_id",
-              "fieldValue": "={{ $json.instancia_id }}"
+              "name": "Content-Type",
+              "value": "application/json"
             },
             {
-              "fieldId": "mensagem_completa",
-              "fieldValue": "={{ $json.mensagem_completa }}"
-            },
-            {
-              "fieldId": "agendado_para",
-              "fieldValue": "={{ $json.agendado_para }}"
-            },
-            {
-              "fieldId": "status",
-              "fieldValue": "agendado"
-            }
-          ]
-        }
-      },
-      "id": "node-insert-envios",
-      "name": "Inserir na Fila de Envios",
-      "type": "n8n-nodes-base.supabase",
-      "typeVersion": 1,
-      "position": [1060, 300],
-      "credentials": {
-        "supabaseApi": {
-          "id": "V326BJ8v0aA0PeXh",
-          "name": "Supabase API"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "operation": "update",
-        "tableId": "ofertas",
-        "matchType": "allFilters",
-        "filters": {
-          "conditions": [
-            {
-              "key": "id",
-              "operator": "eq",
-              "value": "={{ $json.oferta_id }}"
+              "name": "Prefer",
+              "value": "return=representation"
             }
           ]
         },
-        "fieldsUi": {
-          "fieldValues": [
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}"
+      },
+      "id": "node-insert-envio-postgrest",
+      "name": "Agendar na Fila de Envios",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1060, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SUPABASE_URL || 'https://kwiaddydbjdofcyrqglq.supabase.co' }}/rest/v1/ofertas?id=eq.{{ $json.oferta_id }}",
+        "method": "PATCH",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
             {
-              "fieldId": "status",
-              "fieldValue": "enviada"
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_KEY || $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + ($env.SUPABASE_SERVICE_KEY || $env.SUPABASE_ANON_KEY) }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
             }
           ]
-        }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'enviada' }) }}"
       },
-      "id": "node-update-oferta-enviada",
-      "name": "Marcar Oferta como Agendada/Enviada",
-      "type": "n8n-nodes-base.supabase",
-      "typeVersion": 1,
-      "position": [1280, 300],
-      "credentials": {
-        "supabaseApi": {
-          "id": "V326BJ8v0aA0PeXh",
-          "name": "Supabase API"
-        }
-      }
+      "id": "node-patch-oferta-enviada",
+      "name": "Marcar Oferta como Agendada",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1280, 300]
     }
   ],
   "connections": {
@@ -192,29 +170,29 @@
       "main": [
         [
           {
-            "node": "Calcular Slots e Formatar Mensagem",
+            "node": "Calcular Slots e Mensagem",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Calcular Slots e Formatar Mensagem": {
+    "Calcular Slots e Mensagem": {
       "main": [
         [
           {
-            "node": "Inserir na Fila de Envios",
+            "node": "Agendar na Fila de Envios",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Inserir na Fila de Envios": {
+    "Agendar na Fila de Envios": {
       "main": [
         [
           {
-            "node": "Marcar Oferta como Agendada/Enviada",
+            "node": "Marcar Oferta como Agendada",
             "type": "main",
             "index": 0
           }
