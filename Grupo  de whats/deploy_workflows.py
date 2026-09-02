@@ -96,6 +96,20 @@ c = conn.cursor()
 
 workflows_info = {json.dumps(WORKFLOW_FILES)}
 
+# Obter projeto principal
+c.execute("SELECT id FROM project LIMIT 1")
+proj_row = c.fetchone()
+project_id = proj_row[0] if proj_row else 'Ylh570ea40Z1K7yg'
+
+# Criar tag 'afiliados' se não existir
+c.execute("SELECT id FROM tag_entity WHERE name = 'afiliados'")
+tag_row = c.fetchone()
+if not tag_row:
+    tag_id = str(uuid.uuid4())[:16]
+    c.execute("INSERT INTO tag_entity (id, name, createdAt, updatedAt) VALUES (?, 'afiliados', datetime('now'), datetime('now'))", (tag_id,))
+else:
+    tag_id = tag_row[0]
+
 for wf_file in workflows_info:
     with open(f'/tmp/{{wf_file}}', 'r', encoding='utf-8') as f:
         data = json.load(f)
@@ -104,7 +118,6 @@ for wf_file in workflows_info:
     nodes = json.dumps(data.get('nodes', []))
     connections = json.dumps(data.get('connections', {{}}))
     settings = json.dumps(data.get('settings', {{'executionOrder': 'v1'}}))
-    now = datetime.utcnow().isoformat()
     
     # Checar se já existe por nome
     c.execute("SELECT id FROM workflow_entity WHERE name = ?", (wf_name,))
@@ -127,6 +140,19 @@ for wf_file in workflows_info:
             VALUES (?, ?, 0, ?, ?, ?, ?, '[]', 1, 0, datetime('now'), datetime('now'))
         \"\"\", (wf_id, wf_name, nodes, connections, settings, version_id))
         print(f"  [INSERIDO] {{wf_name}} (ID: {{wf_id}})")
+
+    # Vincular ao shared_workflow do projeto
+    c.execute("SELECT workflowId FROM shared_workflow WHERE workflowId = ? AND projectId = ?", (wf_id, project_id))
+    if not c.fetchone():
+        c.execute(\"\"\"
+            INSERT INTO shared_workflow (workflowId, projectId, role, createdAt, updatedAt)
+            VALUES (?, ?, 'workflow:owner', datetime('now'), datetime('now'))
+        \"\"\", (wf_id, project_id))
+
+    # Vincular à tag 'afiliados'
+    c.execute("SELECT workflowId FROM workflows_tags WHERE workflowId = ? AND tagId = ?", (wf_id, tag_id))
+    if not c.fetchone():
+        c.execute("INSERT INTO workflows_tags (workflowId, tagId) VALUES (?, ?)", (wf_id, tag_id))
 
 conn.commit()
 conn.close()
