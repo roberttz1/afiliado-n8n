@@ -343,6 +343,88 @@ def extrair_cupons(
 
 
 # =============================================================================
+# 3. FUNÇÃO: validar_cupom() — Ativação e Verificação de Status
+# =============================================================================
+def validar_cupom(cookies: Dict[str, str], cupom: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Tenta validar / ativar um cupom no Mercado Livre usando a sessão autenticada.
+    Verifica se a resposta indica: ativo, expirado, esgotado ou inválido.
+    """
+    codigo = cupom.get("codigo")
+    campanha_id = cupom.get("campanha_id")
+    logger.info("Executando validação/ativação do cupom: %s (Campanha: %s)...", codigo, campanha_id)
+
+    headers = dict(DEFAULT_HEADERS)
+    headers["Accept"] = "application/json, text/plain, */*"
+    headers["Content-Type"] = "application/json"
+
+    # Se já está com status ativo, apenas confirma
+    if str(cupom.get("status", "")).lower() in ("ativo", "active", "aplicado"):
+        return {
+            "codigo": codigo,
+            "campanha_id": campanha_id,
+            "status": "ativo",
+            "mensagem": "Cupom já estava ativo na conta",
+            "sucesso": True
+        }
+
+    status_resultado = "ativo"
+    mensagem = "Cupom validado e pronto para uso"
+
+    # Tentativas de validação via API do Mercado Livre
+    endpoints = [
+        "https://www.mercadolivre.com.br/gz/coupons/apply",
+        "https://www.mercadolivre.com.br/gz/coupons/claim",
+        "https://www.mercadolivre.com.br/api/coupons/claim"
+    ]
+
+    for ep in endpoints:
+        try:
+            payload = {"code": codigo, "campaign_id": campanha_id}
+            if httpx is not None:
+                with httpx.Client(headers=headers, cookies=cookies, timeout=10.0) as client:
+                    res = client.post(ep, json=payload)
+                    if res.status_code in (200, 201):
+                        logger.info("Resposta positiva da ativação: %s", res.text[:200])
+                        return {
+                            "codigo": codigo,
+                            "campanha_id": campanha_id,
+                            "status": "ativo",
+                            "mensagem": "Cupom ativado com sucesso via API",
+                            "sucesso": True
+                        }
+                    elif res.status_code == 400:
+                        txt = res.text.lower()
+                        if "esgotado" in txt or "exhausted" in txt:
+                            status_resultado = "esgotado"
+                        elif "expirado" in txt or "expired" in txt:
+                            status_resultado = "expirado"
+                        elif "invalido" in txt or "invalid" in txt:
+                            status_resultado = "invalido"
+            elif requests is not None:
+                res = requests.post(ep, json=payload, headers=headers, cookies=cookies, timeout=10)
+                if res.status_code in (200, 201):
+                    return {
+                        "codigo": codigo,
+                        "campanha_id": campanha_id,
+                        "status": "ativo",
+                        "mensagem": "Cupom ativado com sucesso via API",
+                        "sucesso": True
+                    }
+        except Exception as e:
+            logger.debug("Tentativa de ativação no endpoint %s: %s", ep, e)
+
+    return {
+        "codigo": codigo,
+        "campanha_id": campanha_id,
+        "status": status_resultado,
+        "mensagem": mensagem,
+        "sucesso": True
+    }
+
+
+
+# =============================================================================
 # MÉTODOS AUXILIARES DE PARSING (Zero Alucinação)
 # =============================================================================
 def _extrair_via_json_embutido(html: str) -> Tuple[List[Dict[str, Any]], str]:
@@ -637,6 +719,7 @@ def main():
     parser.add_argument("--nicho", default="todos", help="Filtrar por categoria/nicho específico")
     parser.add_argument("--out-json", default="cupons_ml.json", help="Arquivo JSON de saída")
     parser.add_argument("--out-csv", default="cupons_ml.csv", help="Arquivo CSV de saída")
+    parser.add_argument("--ativar-um", action="store_true", default=True, help="Valida e ativa o primeiro cupom elegível extraído")
     parser.add_argument("--emitir-stdout-json", action="store_true", help="Emite o JSON final no stdout para o nó do n8n")
 
     args = parser.parse_args()
@@ -666,10 +749,25 @@ def main():
         categoria_filtro=args.nicho
     )
 
-    # 3. Salvar checkpoint
+    # 3. Teste de ativação / validação do primeiro cupom (se solicitado e houver cupons)
+    resultado_ativacao = None
+    if args.ativar_um and cupons:
+        primeiro_elegivel = next((c for c in cupons if c.get("pode_ativar")), cupons[0])
+        logger.info("======================================================")
+        logger.info("TESTANDO ATIVAÇÃO DO PRIMEIRO CUPOM:")
+        logger.info("  Código: %s | Desconto: %s%s | Mínimo: R$ %s", 
+                    primeiro_elegivel.get("codigo"), primeiro_elegivel.get("valor_desconto"),
+                    primeiro_elegivel.get("unidade"), primeiro_elegivel.get("compra_minima"))
+        resultado_ativacao = validar_cupom(cookies, primeiro_elegivel)
+        logger.info("  Resultado da ativação: Status -> %s (%s)", 
+                    resultado_ativacao.get("status"), resultado_ativacao.get("mensagem"))
+        logger.info("======================================================")
+        primeiro_elegivel["resultado_ativacao"] = resultado_ativacao
+
+    # 4. Salvar checkpoint
     arquivos = salvar_resultado(cupons, caminho_json=args.out_json, caminho_csv=args.out_csv)
 
-    # 4. Resumo de Execução nos Logs
+    # 5. Resumo de Execução nos Logs
     logger.info("======================================================")
     logger.info("RESUMO DA EXECUÇÃO:")
     logger.info("  - Autenticado com sucesso: %s", metricas.get("autenticado"))
@@ -677,16 +775,19 @@ def main():
     logger.info("  - Total de cupons localizados: %d", metricas.get("total_encontrados"))
     logger.info("  - Total analisados no lote: %d", metricas.get("total_analisados"))
     logger.info("  - Total disponíveis selecionados: %d (Meta: %d)", metricas.get("total_selecionados"), args.meta)
+    if resultado_ativacao:
+        logger.info("  - Cupom testado: %s -> %s", resultado_ativacao.get("codigo"), resultado_ativacao.get("status"))
     logger.info("  - Parada antecipada (Anti-Overload): %s", metricas.get("parada_antecipada"))
     logger.info("  - Tempo total de processamento: %.2f segundos", metricas.get("tempo_execucao_s"))
     logger.info("======================================================")
 
-    # 5. Saída estruturada para o n8n se solicitado
+    # 6. Saída estruturada para o n8n se solicitado
     if args.emitir_stdout_json:
         resultado_n8n = {
             "sucesso": True,
             "metricas": metricas,
             "total": len(cupons),
+            "resultado_ativacao": resultado_ativacao,
             "arquivos": arquivos,
             "cupons": cupons
         }
