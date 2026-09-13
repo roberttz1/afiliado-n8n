@@ -68,7 +68,7 @@
     },
     {
       "parameters": {
-        "command": "=python3 /app/scraper/scraper_cupons_ml.py --origem-cookies raw --cookies-raw '{{ $json.value || $json.data }}' --meta 10 --batch-size 10 --emitir-stdout-json"
+        "command": "python3 /root/scraper_cupons_ml.py --origem-cookies redis --redis-host localhost --redis-port 6380 --redis-key cookies-mercadolivre-cupons --meta 10 --emitir-stdout-json"
       },
       "id": "node-exec-python-scraper",
       "name": "Executar Scraper Python (Lote 10)",
