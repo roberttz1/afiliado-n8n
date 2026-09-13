@@ -32,13 +32,26 @@ import json
 import logging
 import os
 import re
-import sys
-import time
+import urllib.request
+import urllib.parse
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
-import httpx
-from bs4 import BeautifulSoup
+# Importação defensiva: Suporta httpx, requests ou urllib nativo
+try:
+    import httpx
+except ImportError:
+    httpx = None
+
+try:
+    import requests
+except ImportError:
+    requests = None
+
+try:
+    from bs4 import BeautifulSoup
+except ImportError:
+    BeautifulSoup = None
 
 # Configuração de Logs detalhados e legíveis
 logging.basicConfig(
@@ -211,20 +224,53 @@ def extrair_cupons(
     inicio = time.time()
 
     headers = dict(DEFAULT_HEADERS)
+    html_content = ""
+    status_code = 0
+    final_url = ""
 
     try:
-        with httpx.Client(headers=headers, cookies=cookies, follow_redirects=True, timeout=timeout) as client:
-            resp = client.get(URL_CUPONS_ML)
-            logger.info("Resposta HTTP recebida: Status %d | URL Final: %s", resp.status_code, resp.url)
+        # Engine 1: httpx
+        if httpx is not None:
+            logger.info("-> Utilizando engine HTTP: httpx")
+            with httpx.Client(headers=headers, cookies=cookies, follow_redirects=True, timeout=timeout) as client:
+                resp = client.get(URL_CUPONS_ML)
+                status_code = resp.status_code
+                final_url = str(resp.url)
+                html_content = resp.text
 
-            # Verificar se foi redirecionado para login (sessão expirada/inválida)
-            if "login" in str(resp.url).lower():
-                logger.error("A requisição foi redirecionada para a tela de login. Os cookies expiraram ou são inválidos!")
-                metricas["tempo_execucao_s"] = round(time.time() - inicio, 2)
-                return [], metricas
-
-            metricas["autenticado"] = True
+        # Engine 2: requests
+        elif requests is not None:
+            logger.info("-> Utilizando engine HTTP: requests")
+            session = requests.Session()
+            session.headers.update(headers)
+            session.cookies.update(cookies)
+            resp = session.get(URL_CUPONS_ML, allow_redirects=True, timeout=timeout)
+            status_code = resp.status_code
+            final_url = str(resp.url)
             html_content = resp.text
+
+        # Engine 3: urllib.request nativo (zero dependências externas)
+        else:
+            logger.info("-> Utilizando engine HTTP: urllib.request (nativo)")
+            cookie_header = "; ".join(f"{k}={v}" for k, v in cookies.items())
+            req_headers = dict(headers)
+            if cookie_header:
+                req_headers["Cookie"] = cookie_header
+            req = urllib.request.Request(URL_CUPONS_ML, headers=req_headers)
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                status_code = resp.status
+                final_url = resp.geturl()
+                html_content = resp.read().decode("utf-8", errors="replace")
+
+        logger.info("Resposta HTTP recebida: Status %d | URL Final: %s", status_code, final_url)
+
+        # Verificar se foi redirecionado para login (sessão expirada/inválida)
+        if "login" in final_url.lower():
+            logger.error("A requisição foi redirecionada para a tela de login. Os cookies expiraram ou são inválidos!")
+            metricas["tempo_execucao_s"] = round(time.time() - inicio, 2)
+            return [], metricas
+
+        metricas["autenticado"] = True
 
     except Exception as e:
         logger.error("Erro na requisição HTTP para a página de cupons: %s", e)
