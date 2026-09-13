@@ -190,8 +190,20 @@ def atualizar_n8n():
 
 def testar_scraper_local():
     log("==================================================")
-    log("FASE 3: TESTANDO SCRAPER E CONEXÃO REDIS")
+    log("FASE 3: INSTALANDO PACOTES E TESTANDO SCRAPER")
     log("==================================================")
+    
+    # 1. Garantir dependências instaladas via apt
+    log("Instalando python3-httpx, python3-bs4, python3-redis via apt...")
+    subprocess.run(["apt-get", "update", "-y"], check=False)
+    subprocess.run(["apt-get", "install", "-y", "python3-httpx", "python3-bs4", "python3-redis"], check=False)
+
+    # 2. Baixar a versão mais recente do scraper do GitHub
+    log("Baixando versão atualizada de scraper_cupons_ml.py...")
+    url_scraper = "https://raw.githubusercontent.com/roberttz1/afiliado-n8n/main/Produ%C3%A7%C3%A3o/scraper_cupons_ml.py"
+    subprocess.run(["curl", "-sSL", url_scraper, "-o", "/root/scraper_cupons_ml.py"], check=False)
+
+    # 3. Executar o scraper
     cmd = [
         "python3", "/root/scraper_cupons_ml.py",
         "--origem-cookies", "redis",
