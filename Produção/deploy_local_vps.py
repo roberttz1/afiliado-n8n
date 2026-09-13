@@ -25,7 +25,10 @@ print("==================================================")
 
 # 1. Instalar bibliotecas Python no host
 print("\n📦 1. Instalando bibliotecas Python necessárias...")
-subprocess.run(["pip3", "install", "httpx", "beautifulsoup4", "redis", "--break-system-packages"], check=False)
+# Tenta via apt primeiro (mais estável no Ubuntu 24.04) e pip com --ignore-installed
+subprocess.run(["apt-get", "update", "-y"], check=False)
+subprocess.run(["apt-get", "install", "-y", "python3-httpx", "python3-bs4", "python3-redis"], check=False)
+subprocess.run(["pip3", "install", "httpx", "beautifulsoup4", "redis", "--ignore-installed", "--break-system-packages"], check=False)
 
 # 2. Injetar workflow no SQLite do n8n se o banco existir
 if os.path.exists(SQLITE_PATH) and os.path.exists(WF_FILE):
