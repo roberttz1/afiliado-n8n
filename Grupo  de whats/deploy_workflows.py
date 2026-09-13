@@ -30,7 +30,8 @@ WORKFLOW_FILES = [
     "wf_03_agendador_fila.json",
     "wf_04_disparador_whatsapp.json",
     "wf_05_monitor_grupos.json",
-    "wf_06_reset_diario.json"
+    "wf_06_reset_diario.json",
+    "wf_extrair_cupons_ml.json"
 ]
 
 def validar_workflows_locais(base_dir):

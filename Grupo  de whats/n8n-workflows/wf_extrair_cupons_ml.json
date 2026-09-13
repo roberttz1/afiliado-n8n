@@ -1,0 +1,188 @@
+{
+  "name": "extrair Cupons ML",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 30
+            }
+          ]
+        }
+      },
+      "id": "node-schedule-30m",
+      "name": "Trigger a cada 30min",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [180, 260]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "extrair-cupons-ml",
+        "options": {}
+      },
+      "id": "node-webhook-manual",
+      "name": "Webhook Disparo Manual",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [180, 460],
+      "webhookId": "extrair-cupons-ml-webhook"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "key": "cookies-mercadolivre-cupons",
+        "options": {}
+      },
+      "id": "node-redis-get-cookies",
+      "name": "Redis - Obter Cookies ML",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [420, 360],
+      "credentials": {
+        "redis": {
+          "id": "redis-default",
+          "name": "Redis Ofertas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.value || $json.data || '' }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "node-if-cookies-valid",
+      "name": "Cookies Disponíveis?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [660, 360]
+    },
+    {
+      "parameters": {
+        "command": "=python3 /app/scraper/scraper_cupons_ml.py --origem-cookies raw --cookies-raw '{{ $json.value || $json.data }}' --meta 10 --batch-size 10 --emitir-stdout-json"
+      },
+      "id": "node-exec-python-scraper",
+      "name": "Executar Scraper Python (Lote 10)",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [900, 280]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nconst stdout = item.stdout || '';\n\nlet data;\ntry {\n  data = JSON.parse(stdout);\n} catch (e) {\n  data = {\n    sucesso: false,\n    erro: 'Falha ao interpretar stdout do scraper Python',\n    raw: stdout,\n    stderr: item.stderr || ''\n  };\n}\n\nif (!data.sucesso || !data.cupons || data.cupons.length === 0) {\n  return [{\n    json: {\n      sucesso: false,\n      mensagem: 'Nenhum cupom elegível extraído ou erro de sessão',\n      detalhes: data,\n      timestamp: new Date().toISOString()\n    }\n  }];\n}\n\n// Emite cada cupom elegível como um item independente\nreturn data.cupons.map(cupom => ({\n  json: {\n    campanha_id: cupom.campanha_id,\n    codigo: cupom.codigo,\n    status: cupom.status,\n    categoria_origem: cupom.categoria_origem,\n    valor_desconto: cupom.valor_desconto,\n    unidade: cupom.unidade,\n    valor_maximo_desconto: cupom.valor_maximo_desconto,\n    compra_minima: cupom.compra_minima,\n    validade: cupom.validade,\n    pode_ativar: cupom.pode_ativar,\n    data_extracao: new Date().toISOString(),\n    origem: 'scraper_ml_lote10'\n  }\n}));"
+      },
+      "id": "node-formatar-cupons",
+      "name": "Formatar Lista de Cupons",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1140, 280]
+    },
+    {
+      "parameters": {
+        "jsCode": "const itens = $input.all();\nconst total = itens.length;\nconst primeiro = itens[0] ? itens[0].json : {};\n\nif (primeiro.sucesso === false) {\n  return [{\n    json: {\n      status: 'alerta',\n      mensagem: primeiro.mensagem || 'Falha na extração',\n      detalhes: primeiro.detalhes || {}\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    status: 'sucesso',\n    total_cupons_disponiveis: total,\n    amostra_codigos: itens.map(i => i.json.codigo).slice(0, 10),\n    timestamp: new Date().toISOString(),\n    mensagem: `Lote de ${total} cupons extraído com sucesso. Pronto para validação e filtro por planilha.`\n  }\n}];"
+      },
+      "id": "node-checkpoint-sucesso",
+      "name": "Checkpoint & Telemetria",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1380, 280]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{\n  json: {\n    status: 'erro',\n    motivo: 'Chave cookies-mercadolivre-cupons vazia ou inexistente no Redis',\n    sugestao: 'Insira os cookies atualizados no Redis via redis-cli ou API antes da próxima rodada',\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "node-log-cookies-ausentes",
+      "name": "Aviso Cookies Ausentes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 480]
+    }
+  ],
+  "connections": {
+    "Trigger a cada 30min": {
+      "main": [
+        [
+          {
+            "node": "Redis - Obter Cookies ML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Disparo Manual": {
+      "main": [
+        [
+          {
+            "node": "Redis - Obter Cookies ML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redis - Obter Cookies ML": {
+      "main": [
+        [
+          {
+            "node": "Cookies Disponíveis?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cookies Disponíveis?": {
+      "main": [
+        [
+          {
+            "node": "Executar Scraper Python (Lote 10)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Aviso Cookies Ausentes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Executar Scraper Python (Lote 10)": {
+      "main": [
+        [
+          {
+            "node": "Formatar Lista de Cupons",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formatar Lista de Cupons": {
+      "main": [
+        [
+          {
+            "node": "Checkpoint & Telemetria",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
